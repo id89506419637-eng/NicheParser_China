@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Настройки ВЭД — NicheParser{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Настройки ВЭД</h1>
+        <p class="page-subtitle">Курсы, пошлина, НДС, логистика, пороги вердиктов</p>
+    </div>
+    <form method="POST" action="{{ url_for('refresh_rates') }}">
+        <button type="submit" class="btn btn-ghost">🔄 Обновить курсы ЦБ</button>
+    </form>
+</div>
+
+<form method="POST" action="{{ url_for('update_settings') }}" class="card settings-form">
+    <div class="grid-2">
+        <div class="form-group">
+            <label>Курс USD, ₽</label>
+            <input type="number" step="0.01" name="usd_rate" value="{{ settings.usd_rate or 0 }}">
+        </div>
+        <div class="form-group">
+            <label>Курс CNY, ₽</label>
+            <input type="number" step="0.01" name="cny_rate" value="{{ settings.cny_rate or 0 }}">
+        </div>
+        <div class="form-group">
+            <label>Пошлина, %</label>
+            <input type="number" step="0.1" name="duty_percent" value="{{ settings.duty_percent }}">
+        </div>
+        <div class="form-group">
+            <label>НДС, %</label>
+            <input type="number" step="0.1" name="vat_percent" value="{{ settings.vat_percent }}">
+        </div>
+        <div class="form-group">
+            <label>Логистика, $/кг</label>
+            <input type="number" step="0.1" name="logistics_per_kg" value="{{ settings.logistics_per_kg }}">
+        </div>
+        <div class="form-group">
+            <label>Логистика, $/м³</label>
+            <input type="number" step="1" name="logistics_per_cbm" value="{{ settings.logistics_per_cbm }}">
+        </div>
+        <div class="form-group">
+            <label>Банковские комиссии, %</label>
+            <input type="number" step="0.1" name="bank_percent" value="{{ settings.bank_percent }}">
+        </div>
+        <div class="form-group">
+            <label>Мин. маржа для «ВЕЗЁМ», %</label>
+            <input type="number" step="1" name="min_margin_percent" value="{{ settings.min_margin_percent }}">
+        </div>
+        <div class="form-group">
+            <label>Мин. абс. маржа на партию, ₽</label>
+            <input type="number" step="1000" name="min_margin_total_rub" value="{{ settings.min_margin_total_rub }}">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">💾 Сохранить</button>
+    </div>
+    {% if settings.updated_at %}
+        <div class="form-footer">Последнее обновление: {{ settings.updated_at|truncate(19, True, '') }}</div>
+    {% endif %}
+</form>
+{% endblock %}

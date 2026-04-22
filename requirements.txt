@@ -1,0 +1,8 @@
+flask==3.0.3
+python-dotenv==1.0.1
+requests==2.32.3
+playwright==1.47.0
+playwright-stealth==1.0.6
+openai==1.51.0
+waitress==3.0.0
+pytest==8.3.3

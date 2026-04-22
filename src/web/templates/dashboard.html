@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — NicheParser{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Агент-аналитик ниш</h1>
+        <p class="page-subtitle">Wordstat × Alibaba × ВЭД-расчёт × AI-вердикт</p>
+    </div>
+    <form action="{{ url_for('run_pipeline') }}" method="POST" class="run-form">
+        <input type="number" name="max_niches" min="1" max="100" value="5"
+               class="input-small" title="Сколько ниш анализировать">
+        <button type="submit" class="btn btn-primary" {% if active_run %}disabled{% endif %}>
+            <span class="btn-icon">🚀</span>
+            {% if active_run %}Анализ идёт...{% else %}Запустить анализ{% endif %}
+        </button>
+    </form>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.total_niches }}</div>
+        <div class="stat-label">Всего ниш</div>
+        <div class="stat-icon">📦</div>
+    </div>
+    <div class="stat-card stat-card--green">
+        <div class="stat-value">{{ stats.profitable }}</div>
+        <div class="stat-label">Вердикт «ВЕЗЁМ»</div>
+        <div class="stat-icon">💰</div>
+    </div>
+    <div class="stat-card stat-card--amber">
+        <div class="stat-value">{{ stats.avg_margin }}%</div>
+        <div class="stat-label">Средняя маржа</div>
+        <div class="stat-icon">📈</div>
+    </div>
+    <div class="stat-card stat-card--blue">
+        <div class="stat-value">{% if stats.usd_rate %}{{ "%.1f"|format(stats.usd_rate) }}{% else %}—{% endif %}</div>
+        <div class="stat-label">Курс USD (ЦБ)</div>
+        <div class="stat-icon">💱</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🔎 Фильтры</h2>
+    </div>
+    <form method="GET" action="{{ url_for('dashboard') }}" class="filters-form">
+        <select name="category" class="select">
+            <option value="">Все категории</option>
+            {% for c in target_categories %}
+                <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+        <select name="verdict" class="select">
+            <option value="">Любой вердикт</option>
+            {% for v in verdicts %}
+                <option value="{{ v }}" {% if filters.verdict == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+        </select>
+        <select name="niche_type" class="select">
+            <option value="">Любой тип ниши</option>
+            {% for t in niche_types %}
+                <option value="{{ t }}" {% if filters.niche_type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+        <input type="number" name="min_margin" class="input-small" placeholder="Маржа от %" value="{{ filters.min_margin|default('', true) }}">
+        <button type="submit" class="btn btn-ghost">Применить</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Сбросить</a>
+    </form>
+</div>
+
+<!-- Top Products -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📊 Топ товары по марже</h2>
+    </div>
+
+    {% if products %}
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Товар</th>
+                    <th>Ниша / тип</th>
+                    <th>Цена Китай</th>
+                    <th>Себест. ₽</th>
+                    <th>Маржа %</th>
+                    <th>Маржа партия</th>
+                    <th>Вердикт</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr>
+                    <td>
+                        <div class="niche-name" title="{{ p.title_en }}">{{ p.title_en|truncate(50) }}</div>
+                        {% if p.certificates %}
+                            <div class="cert-row">
+                                {% for c in p.certificates.split(',') %}
+                                    <span class="cert-badge">{{ c }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="niche-name">{{ p.niche_name_ru }}</div>
+                        <div class="niche-category">
+                            <span class="type-badge">{{ p.niche_type or '—' }}</span>
+                            {% if p.is_seasonal %}<span class="type-badge type-badge--amber">🌦 сезон</span>{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="price-cell">
+                            <span class="price-main">${{ "%.2f"|format(p.price_usd_min) }}
+                                {% if p.price_usd_max and p.price_usd_max != p.price_usd_min %}
+                                    – ${{ "%.2f"|format(p.price_usd_max) }}
+                                {% endif %}
+                            </span>
+                            <span class="price-sub">MOQ: {{ p.moq or '—' }}</span>
+                        </div>
+                    </td>
+                    <td><span class="price-main">{{ "{:,.0f}".format(p.cost_total_rub) }} ₽</span></td>
+                    <td>
+                        {% set m = p.margin_percent %}
+                        <span class="margin-badge {% if m >= 70 %}margin--high{% elif m >= 50 %}margin--good{% elif m >= 30 %}margin--mid{% else %}margin--low{% endif %}">
+                            {{ "%.0f"|format(m) }}%
+                        </span>
+                    </td>
+                    <td><span class="price-main">{{ "{:,.0f}".format(p.margin_total_rub) }} ₽</span></td>
+                    <td>
+                        <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}">
+                            {{ p.verdict or '—' }}
+                        </span>
+                        {% if p.pain_points_list %}
+                            <div class="pain-marker" title="Ниша закрывает боли предпринимателей">💡 боли {{ p.pain_points_list|length }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('product_detail', product_id=p.id) }}" class="btn btn-sm btn-ghost">Подробнее</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>Пока нет данных</h3>
+        <p>Нажми «Запустить анализ» наверху — агент сам найдёт ниши, спарсит Alibaba и посчитает экономику.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Demand chart -->
+{% if demand_timeline %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📈 Динамика спроса (Wordstat)</h2>
+    </div>
+    <div class="chart-wrapper">
+        <canvas id="demandChart" height="120"
+                data-timeline='{{ demand_timeline|tojson }}'></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- Avito stub -->
+<div class="card card--muted">
+    <div class="card-header">
+        <h2 class="card-title">🟢 Авито-аналитика</h2>
+    </div>
+    <div class="avito-stub">
+        <p>Модуль выключен. Подключается после появления доступа к Авито API.</p>
+        <button class="btn btn-ghost" disabled>Подключить (скоро)</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if demand_timeline %}
+<script>
+window.addEventListener('load', () => {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById('demandChart');
+    if (!canvas) return;
+    const timeline = JSON.parse(canvas.dataset.timeline || '{}');
+    const datasets = [];
+    const palette = ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ef4444'];
+    let i = 0;
+    const allDates = new Set();
+    for (const name in timeline) {
+        timeline[name].forEach(p => allDates.add(p.date));
+    }
+    const labels = Array.from(allDates).sort();
+    for (const name in timeline) {
+        const pts = timeline[name];
+        const byDate = Object.fromEntries(pts.map(p => [p.date, p.frequency]));
+        datasets.push({
+            label: name,
+            data: labels.map(d => byDate[d] ?? null),
+            borderColor: palette[i % palette.length],
+            backgroundColor: palette[i % palette.length] + '33',
+            tension: 0.35,
+            spanGaps: true,
+        });
+        i++;
+    }
+    new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { labels: { color: '#e8eaed' } },
+                tooltip: { intersect: false, mode: 'index' }
+            },
+            scales: {
+                x: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            }
+        }
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

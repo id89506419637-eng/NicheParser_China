@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title_en|truncate(40) }} — NicheParser{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ product.title_en }}</h1>
+        <p class="page-subtitle">
+            Ниша: <a href="{{ url_for('niche_detail', niche_id=product.niche_id) }}">{{ product.niche_name_ru }}</a> ·
+            <span class="type-badge">{{ product.niche_type or '—' }}</span>
+            · Вердикт:
+            <span class="verdict-badge verdict-{{ product.verdict|replace(' ','-')|lower }}">{{ product.verdict }}</span>
+        </p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">← назад</a>
+</div>
+
+<div class="notice">
+    ⚠️ Расчёт приблизительный. Точный код ТН ВЭД, пошлину и реальный тариф логистики
+    уточняет <strong>таможенный брокер и логистическая компания</strong> перед закупкой.
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h2 class="card-title">💵 Цены и поставщик</h2></div>
+        <dl class="kv-list">
+            <dt>Цена Китай</dt>
+            <dd>${{ "%.2f"|format(product.price_usd_min) }}{% if product.price_usd_max and product.price_usd_max != product.price_usd_min %} – ${{ "%.2f"|format(product.price_usd_max) }}{% endif %}</dd>
+            <dt>MOQ</dt>
+            <dd>{{ product.moq or '—' }}</dd>
+            <dt>Рейтинг поставщика</dt>
+            <dd>{{ product.supplier_rating or '—' }}</dd>
+            <dt>Сделок</dt>
+            <dd>{{ product.deals_count or '—' }}</dd>
+            <dt>Сертификаты</dt>
+            <dd>
+                {% if product.certificates %}
+                    {% for c in product.certificates.split(',') %}<span class="cert-badge">{{ c }}</span>{% endfor %}
+                {% else %}—{% endif %}
+            </dd>
+            <dt>Вес единицы</dt>
+            <dd>{{ product.weight_kg or '—' }} кг</dd>
+            <dt>Габариты (Д×Ш×В)</dt>
+            <dd>{{ product.length_cm or '—' }}×{{ product.width_cm or '—' }}×{{ product.height_cm or '—' }} см</dd>
+            <dt>Конкуренция (Alibaba)</dt>
+            <dd>{{ "{:,}".format(product.competition_count or 0) }} товаров</dd>
+            {% if product.product_url %}
+            <dt>Ссылка</dt>
+            <dd><a href="{{ product.product_url }}" target="_blank" rel="noopener">Открыть на Alibaba ↗</a></dd>
+            {% endif %}
+        </dl>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h2 class="card-title">📊 Разбивка себестоимости</h2></div>
+        <dl class="kv-list">
+            <dt>Закупка</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.purchase_rub) }} ₽</dd>
+            <dt>Пошлина</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.duty_rub) }} ₽</dd>
+            <dt>НДС</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.vat_rub) }} ₽</dd>
+            <dt>Логистика</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.logistics_rub) }} ₽</dd>
+            <dt>Банк</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.bank_rub) }} ₽</dd>
+            <dt class="kv-total">Итого за единицу</dt>
+            <dd class="kv-total">{{ "{:,.0f}".format(breakdown.cost_per_unit_rub) }} ₽</dd>
+            <dt>Партия ({{ breakdown.quantity }} шт.)</dt>
+            <dd>{{ "{:,.0f}".format(breakdown.cost_batch_rub) }} ₽</dd>
+            <dt>Маржа %</dt>
+            <dd>
+                <span class="margin-badge {% if product.margin_percent >= 70 %}margin--high{% elif product.margin_percent >= 50 %}margin--good{% elif product.margin_percent >= 30 %}margin--mid{% else %}margin--low{% endif %}">
+                    {{ "%.1f"|format(product.margin_percent) }}%
+                </span>
+            </dd>
+            <dt>Маржа на партию</dt>
+            <dd><strong>{{ "{:,.0f}".format(product.margin_total_rub) }} ₽</strong></dd>
+        </dl>
+    </div>
+</div>
+
+{% if product.pain_points_list %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">💡 Подтверждающие факторы (боли ниши)</h2>
+    </div>
+    <ul class="pain-list">
+        {% for pain in product.pain_points_list %}<li class="pain-item">{{ pain }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}"
+      onsubmit="return confirm('Удалить этот товар?');" class="inline-form">
+    <button type="submit" class="btn btn-ghost btn-danger">🗑 Удалить из анализа</button>
+</form>
+{% endblock %}

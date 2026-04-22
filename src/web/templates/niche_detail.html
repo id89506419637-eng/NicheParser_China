@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ niche.name_ru }} — NicheParser{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ niche.name_ru }}</h1>
+        <p class="page-subtitle">
+            {{ niche.category or '—' }} ·
+            <span class="type-badge">{{ niche.niche_type or '—' }}</span>
+            {% if niche.is_seasonal %}<span class="type-badge type-badge--amber">🌦 сезонный</span>{% endif %}
+            · частотность: {{ "{:,}".format(niche.last_frequency) }}/мес
+        </p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">← назад</a>
+</div>
+
+{% if niche.pain_points_list %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">💡 Боли предпринимателей / подтверждающие факторы</h2>
+    </div>
+    <ul class="pain-list">
+        {% for pain in niche.pain_points_list %}
+            <li class="pain-item">{{ pain }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📦 Товары этой ниши на Alibaba ({{ products|length }})</h2>
+    </div>
+    {% if products %}
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Товар</th>
+                    <th>Цена $</th>
+                    <th>MOQ</th>
+                    <th>Себест. ₽</th>
+                    <th>Маржа %</th>
+                    <th>Маржа партия ₽</th>
+                    <th>Вердикт</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr>
+                    <td>
+                        <div class="niche-name" title="{{ p.title_en }}">{{ p.title_en|truncate(60) }}</div>
+                        {% if p.certificates %}
+                            <div class="cert-row">
+                                {% for c in p.certificates.split(',') %}<span class="cert-badge">{{ c }}</span>{% endfor %}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>${{ "%.2f"|format(p.price_usd_min) }}</td>
+                    <td>{{ p.moq or '—' }}</td>
+                    <td>{{ "{:,.0f}".format(p.cost_total_rub) }}</td>
+                    <td>
+                        <span class="margin-badge {% if p.margin_percent >= 70 %}margin--high{% elif p.margin_percent >= 50 %}margin--good{% elif p.margin_percent >= 30 %}margin--mid{% else %}margin--low{% endif %}">
+                            {{ "%.0f"|format(p.margin_percent) }}%
+                        </span>
+                    </td>
+                    <td>{{ "{:,.0f}".format(p.margin_total_rub) }}</td>
+                    <td><span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}">{{ p.verdict }}</span></td>
+                    <td>
+                        <a href="{{ url_for('product_detail', product_id=p.id) }}" class="btn btn-sm btn-ghost">Открыть</a>
+                        {% if p.product_url %}
+                            <a href="{{ p.product_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Alibaba ↗</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">🕳️</div>
+        <h3>Товары по этой нише не найдены</h3>
+        <p>Возможно, Alibaba вернула блок, или запрос слишком узкий.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if history %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📈 История частотности</h2>
+    </div>
+    <div class="chart-wrapper">
+        <canvas id="nicheHistoryChart" height="120"
+                data-history='{{ history|tojson }}'></canvas>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if history %}
+<script>
+window.addEventListener('load', () => {
+    if (typeof Chart === 'undefined') return;
+    const canvas = document.getElementById('nicheHistoryChart');
+    if (!canvas) return;
+    const demandHistory = JSON.parse(canvas.dataset.history || '[]');
+    const sorted = demandHistory.slice().reverse();
+    new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: sorted.map(p => p.snapshot_date),
+            datasets: [{
+                label: 'Частотность',
+                data: sorted.map(p => p.frequency),
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99,102,241,0.2)',
+                tension: 0.35,
+                fill: true,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#e8eaed' } } },
+            scales: {
+                x: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            }
+        }
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

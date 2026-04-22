@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}История запусков — NicheParser{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">История запусков</h1>
+        <p class="page-subtitle">Каждый запуск пайплайна с результатами</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">← назад</a>
+</div>
+
+<div class="card">
+    {% if runs %}
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Начало</th>
+                    <th>Окончание</th>
+                    <th>Статус</th>
+                    <th>Ниш обработано</th>
+                    <th>Товаров</th>
+                    <th>Прибыльных</th>
+                    <th>Ошибка</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in runs %}
+                <tr>
+                    <td>#{{ r.id }}</td>
+                    <td>{{ r.started_at|truncate(19, True, '') }}</td>
+                    <td>{{ r.finished_at|truncate(19, True, '') if r.finished_at else '—' }}</td>
+                    <td>
+                        <span class="verdict-badge verdict-{{ r.status }}">{{ r.status }}</span>
+                    </td>
+                    <td>{{ r.niches_processed }}</td>
+                    <td>{{ r.products_found }}</td>
+                    <td>{{ r.profitable_count }}</td>
+                    <td class="error-cell">{{ r.error_message|truncate(60) if r.error_message else '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h3>Запусков ещё не было</h3>
+        <p>Нажми «Запустить анализ» на дашборде.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
