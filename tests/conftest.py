@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+# Задаём тестовый SECRET_KEY до любого импорта core.config — иначе прод-проверка упадёт.
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-for-pytest")
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

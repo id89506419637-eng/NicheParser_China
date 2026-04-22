@@ -18,10 +18,19 @@ def _bool(value: str, default: bool = False) -> bool:
 
 
 # === Flask ===
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-change-me")
+_INSECURE_SECRET = "dev-insecure-change-me"
+SECRET_KEY = os.getenv("SECRET_KEY", _INSECURE_SECRET)
 FLASK_DEBUG = _bool(os.getenv("FLASK_DEBUG"), default=False)
 FLASK_HOST = os.getenv("FLASK_HOST", "127.0.0.1")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
+
+# В проде с дефолтным ключом — сессии подделываемы. Падаем громко.
+if not FLASK_DEBUG and SECRET_KEY == _INSECURE_SECRET:
+    raise RuntimeError(
+        "SECRET_KEY не задан в .env — сессии Flask станут подделываемыми. "
+        "Сгенерируй случайный ключ: python -c \"import secrets; print(secrets.token_hex(32))\" "
+        "и добавь в .env как SECRET_KEY=..."
+    )
 
 # === Paths ===
 DB_PATH = BASE_DIR / "data" / "niches.db"

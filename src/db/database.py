@@ -352,12 +352,23 @@ def get_ved_settings() -> dict:
         return dict(row) if row else {}
 
 
+# Разрешённые колонки для UPDATE — защита от SQL-инъекции через имена столбцов.
+_VED_SETTINGS_COLUMNS = frozenset({
+    "usd_rate", "cny_rate", "duty_percent", "vat_percent",
+    "logistics_per_kg", "logistics_per_cbm", "bank_percent",
+    "min_margin_percent", "min_margin_total_rub", "updated_at",
+})
+
+
 def update_ved_settings(data: dict) -> None:
-    data = dict(data)  # копия
-    data["updated_at"] = datetime.now().isoformat()
+    # Отфильтровываем любые неожиданные ключи — в SQL попадают только свои.
+    clean = {k: v for k, v in data.items() if k in _VED_SETTINGS_COLUMNS}
+    if not clean:
+        return
+    clean["updated_at"] = datetime.now().isoformat()
     with get_connection() as conn:
-        sets = ", ".join(f"{k} = ?" for k in data)
-        conn.execute(f"UPDATE ved_settings SET {sets} WHERE id = 1", list(data.values()))
+        sets = ", ".join(f"{k} = ?" for k in clean)
+        conn.execute(f"UPDATE ved_settings SET {sets} WHERE id = 1", list(clean.values()))
 
 
 # === Run Logs ===
