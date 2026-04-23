@@ -155,15 +155,37 @@
     {% endif %}
 </div>
 
-<!-- Demand chart -->
-{% if demand_timeline %}
+<!-- Demand chart: показываем только если есть 4+ дат -->
+{% set all_dates = [] %}
+{% for name, points in demand_timeline.items() %}
+    {% for p in points %}
+        {% if p.date not in all_dates %}
+            {% if all_dates.append(p.date) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
+{% if demand_timeline and all_dates|length >= 4 %}
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">📈 Динамика спроса (Wordstat)</h2>
+        <span class="text-muted" style="font-size:12px;">Данные за {{ all_dates|length }} запусков</span>
     </div>
     <div class="chart-wrapper">
-        <canvas id="demandChart" height="120"
+        <canvas id="demandChart" height="100"
                 data-timeline='{{ demand_timeline|tojson }}'></canvas>
+    </div>
+</div>
+{% elif demand_timeline %}
+<div class="card card--muted">
+    <div class="card-body" style="padding:16px 24px; display:flex; align-items:center; gap:12px;">
+        <span style="font-size:1.3rem;">📊</span>
+        <div>
+            <div style="font-weight:600; color:var(--text-secondary); font-size:0.9rem;">Динамика спроса</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">
+                График появится после 4+ запусков анализа. Сейчас данных: {{ all_dates|length }} из 4.
+            </div>
+        </div>
     </div>
 </div>
 {% endif %}
@@ -196,31 +218,78 @@ window.addEventListener('load', () => {
         timeline[name].forEach(p => allDates.add(p.date));
     }
     const labels = Array.from(allDates).sort();
+    const isSingleDate = labels.length <= 1;
+
     for (const name in timeline) {
         const pts = timeline[name];
         const byDate = Object.fromEntries(pts.map(p => [p.date, p.frequency]));
-        datasets.push({
-            label: name,
-            data: labels.map(d => byDate[d] ?? null),
-            borderColor: palette[i % palette.length],
-            backgroundColor: palette[i % palette.length] + '33',
-            tension: 0.35,
-            spanGaps: true,
-        });
+        const color = palette[i % palette.length];
+        if (isSingleDate) {
+            datasets.push({
+                label: name,
+                data: labels.map(d => byDate[d] ?? 0),
+                backgroundColor: color + 'bb',
+                borderColor: color,
+                borderWidth: 2,
+                borderRadius: 6,
+            });
+        } else {
+            datasets.push({
+                label: name,
+                data: labels.map(d => byDate[d] ?? null),
+                borderColor: color,
+                backgroundColor: color + '33',
+                tension: 0.35,
+                spanGaps: true,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                borderWidth: 2.5,
+            });
+        }
         i++;
     }
     new Chart(canvas, {
-        type: 'line',
-        data: { labels, datasets },
+        type: isSingleDate ? 'bar' : 'line',
+        data: { labels: isSingleDate ? ['Поисковые запросы (Wordstat)'] : labels, datasets },
         options: {
             responsive: true,
             plugins: {
-                legend: { labels: { color: '#e8eaed' } },
-                tooltip: { intersect: false, mode: 'index' }
+                legend: {
+                    labels: { color: '#e8eaed', padding: 16, usePointStyle: true }
+                },
+                tooltip: {
+                    intersect: false,
+                    mode: 'index',
+                    backgroundColor: '#1a1b25',
+                    titleColor: '#e8eaed',
+                    bodyColor: '#e8eaed',
+                    borderColor: 'rgba(255,255,255,0.12)',
+                    borderWidth: 1,
+                    padding: 12,
+                    cornerRadius: 8,
+                    titleFont: { weight: '600', size: 13 },
+                    bodyFont: { size: 12 },
+                    callbacks: {
+                        label: function(ctx) {
+                            return ctx.dataset.label + ': ' + (ctx.parsed.y || 0).toLocaleString('ru-RU') + ' запросов';
+                        }
+                    }
+                }
             },
             scales: {
-                x: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                y: { ticks: { color: '#9aa0ab' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                x: {
+                    ticks: { color: '#9aa0ab', font: { size: 12 } },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                y: {
+                    ticks: {
+                        color: '#9aa0ab',
+                        font: { size: 12 },
+                        callback: v => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v
+                    },
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    beginAtZero: true,
+                },
             }
         }
     });

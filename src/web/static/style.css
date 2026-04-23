@@ -804,9 +804,27 @@ a:hover {
 }
 
 .select {
-    padding: 8px 12px; background: var(--bg-input); color: var(--text-primary);
+    padding: 8px 12px; background: #1a1b25; color: var(--text-primary);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     font-family: inherit; font-size: 14px; min-width: 180px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa0ab' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+}
+.select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    outline: none;
+}
+.select option {
+    background: #1a1b25;
+    color: var(--text-primary);
+    padding: 8px 12px;
 }
 .filters-form { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 20px 20px; align-items: center; }
 

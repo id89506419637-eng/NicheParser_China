@@ -5,6 +5,7 @@ AI-классификация ниши через OpenRouter: тип, сезон
 
 import json
 import logging
+import time
 from typing import List, Optional
 
 import requests
@@ -76,33 +77,44 @@ def classify_niche(keyword: str, category: str = "", frequency: int = 0) -> dict
         "max_tokens": 500,
     }
 
-    try:
-        resp = requests.post(
-            f"{OPENROUTER_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://nicheparser.local",
-                "X-Title": "NicheParser_China",
-            },
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            logger.error(f"OpenRouter {resp.status_code}: {resp.text[:200]}")
-            return _fallback(keyword, f"HTTP {resp.status_code}")
+    # Задержка между запросами — OpenRouter free tier имеет лимит скорости
+    time.sleep(6)
 
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        parsed = _parse_json_block(content)
-        if parsed is None:
-            return _fallback(keyword, "ответ AI не JSON")
+    for attempt in range(2):
+        try:
+            resp = requests.post(
+                f"{OPENROUTER_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://nicheparser.local",
+                    "X-Title": "NicheParser_China",
+                },
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                if attempt == 0:
+                    logger.warning("OpenRouter 429 — жду 15 сек и повторяю...")
+                    time.sleep(15)
+                    continue
+                return _fallback(keyword, "rate limit 429")
 
-        return _normalize(parsed)
+            if resp.status_code != 200:
+                logger.error(f"OpenRouter {resp.status_code}: {resp.text[:200]}")
+                return _fallback(keyword, f"HTTP {resp.status_code}")
 
-    except Exception as e:
-        logger.error(f"AI classify failed: {e}")
-        return _fallback(keyword, str(e))
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            parsed = _parse_json_block(content)
+            if parsed is None:
+                return _fallback(keyword, "ответ AI не JSON")
+
+            return _normalize(parsed)
+
+        except Exception as e:
+            logger.error(f"AI classify failed: {e}")
+            return _fallback(keyword, str(e))
 
 
 def _parse_json_block(content: str) -> Optional[dict]:
