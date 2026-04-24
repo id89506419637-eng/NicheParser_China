@@ -50,8 +50,8 @@ async def stealth_browser(headless: bool = True) -> AsyncIterator:
 
     stealth_apply = None
     try:
-        from playwright_stealth import stealth_async  # type: ignore
-        stealth_apply = stealth_async
+        from playwright_stealth import Stealth  # type: ignore
+        stealth_apply = Stealth().apply_stealth_async
     except ImportError:
         logger.warning("playwright_stealth не найден — работаем без stealth-патча")
 

@@ -4,12 +4,14 @@ NicheParser_China — Alibaba parser (Playwright + stealth)
 """
 
 import asyncio
+import hashlib
 import logging
+import random
 import re
 from typing import List, Tuple
 from urllib.parse import quote
 
-from core.config import ALIBABA_MAX_PRODUCTS_PER_NICHE
+from core.config import ALIBABA_MAX_PRODUCTS_PER_NICHE, USE_MOCK_ALIBABA
 from core.models import AlibabaProduct
 from src.parsers.base import stealth_browser, random_delay, PlaywrightNotInstalled
 
@@ -25,6 +27,9 @@ def search_alibaba(query: str, limit: int = ALIBABA_MAX_PRODUCTS_PER_NICHE) -> T
     Синхронная обёртка. Возвращает (список товаров, всего результатов).
     Всего результатов = метрика «конкуренция».
     """
+    if USE_MOCK_ALIBABA:
+        return _mock_products(query, limit)
+
     try:
         return asyncio.run(_search_async(query, limit))
     except PlaywrightNotInstalled as e:
@@ -33,6 +38,53 @@ def search_alibaba(query: str, limit: int = ALIBABA_MAX_PRODUCTS_PER_NICHE) -> T
     except Exception as e:
         logger.error(f"Alibaba search failed for '{query}': {e}", exc_info=True)
         return [], 0
+
+
+def _mock_products(query: str, limit: int) -> Tuple[List[AlibabaProduct], int]:
+    """
+    Детерминированный mock: для одного и того же query даёт одинаковые товары,
+    чтобы история и динамика выглядели стабильно. Цены/MOQ/вес варьируются
+    так, чтобы ВЭД-калькулятор давал разные вердикты (ВЕЗЁМ/ИЗУЧИТЬ/НЕ ВЕЗЁМ).
+    """
+    seed = int(hashlib.md5(query.encode("utf-8")).hexdigest()[:8], 16)
+    rng = random.Random(seed)
+
+    # Базовая цена привязана к «тяжести» запроса (длинный/промышленный = дороже)
+    base_price = 15 + (len(query) % 20) * rng.uniform(8, 35)
+    base_weight = rng.uniform(0.5, 25.0)
+    volume = rng.uniform(0.005, 0.25)  # cbm
+    competition = rng.randint(800, 45_000)
+
+    count = min(limit, rng.randint(4, 8))
+    products: List[AlibabaProduct] = []
+    for i in range(count):
+        price_min = round(base_price * rng.uniform(0.85, 1.0), 2)
+        price_max = round(price_min * rng.uniform(1.1, 1.8), 2)
+        moq = rng.choice([1, 5, 10, 20, 50, 100])
+        weight = round(base_weight * rng.uniform(0.9, 1.2), 2)
+        length = round((volume ** (1 / 3)) * 100 * rng.uniform(0.8, 1.2), 1)
+
+        certs = rng.sample(["CE", "ISO", "RoHS", "FDA", "FCC"], k=rng.randint(0, 3))
+
+        products.append(AlibabaProduct(
+            title_en=f"{query.title()} — Model {chr(65 + i)}{rng.randint(100, 999)}",
+            price_usd_min=price_min,
+            price_usd_max=price_max,
+            moq=moq,
+            supplier_rating=round(rng.uniform(4.0, 5.0), 1),
+            deals_count=rng.randint(5, 500),
+            certificates=certs,
+            weight_kg=weight,
+            length_cm=length,
+            width_cm=round(length * rng.uniform(0.4, 0.9), 1),
+            height_cm=round(length * rng.uniform(0.3, 0.7), 1),
+            product_url=f"{BASE_URL}/product-detail/mock-{seed}-{i}.html",
+        ))
+
+    logger.info(
+        f"Alibaba [MOCK]: '{query}' — {len(products)} товаров, конкуренция ≈ {competition}"
+    )
+    return products, competition
 
 
 async def _search_async(query: str, limit: int) -> Tuple[List[AlibabaProduct], int]:

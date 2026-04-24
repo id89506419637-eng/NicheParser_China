@@ -48,6 +48,11 @@ YANDEX_OAUTH_TOKEN = os.getenv("YANDEX_OAUTH_TOKEN", "")
 USE_MOCK_WORDSTAT = _bool(os.getenv("USE_MOCK_WORDSTAT"), default=True)
 YANDEX_DIRECT_API_URL = "https://api.direct.yandex.com/json/v5/keywordsresearch"
 
+# === Alibaba ===
+# Alibaba активно блокирует скрейпинг (AWSC). Mock-режим даёт правдоподобные
+# товары, чтобы пайплайн давал end-to-end результат без антибот-инфраструктуры.
+USE_MOCK_ALIBABA = _bool(os.getenv("USE_MOCK_ALIBABA"), default=True)
+
 # === Feature flags ===
 ENABLE_WORDSTAT = _bool(os.getenv("ENABLE_WORDSTAT"), default=True)
 ENABLE_ALIBABA = _bool(os.getenv("ENABLE_ALIBABA"), default=True)
