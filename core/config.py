@@ -41,7 +41,7 @@ LOGS_DIR.mkdir(exist_ok=True)
 # === AI (OpenRouter) ===
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-AI_MODEL = os.getenv("AI_MODEL", "google/gemini-2.0-flash-001")
+AI_MODEL = os.getenv("AI_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 
 # === Yandex Wordstat ===
 YANDEX_OAUTH_TOKEN = os.getenv("YANDEX_OAUTH_TOKEN", "")
