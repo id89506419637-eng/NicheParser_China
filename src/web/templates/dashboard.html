@@ -17,6 +17,113 @@
     </form>
 </div>
 
+<!-- Agent 1: niche input → LLM-генерация товаров -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🤖 Подобрать товары по нише</h2>
+        <span class="text-muted" style="font-size:12px;">
+            LLM сгенерит 5–10 конкретных B2B-товаров — 10–20 секунд
+        </span>
+    </div>
+    <form id="niche-form" action="{{ url_for('run_niche') }}" method="POST"
+          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+        <input type="text" name="niche" maxlength="80" required
+               value="{{ generated_niche or '' }}"
+               placeholder="например: станки, медоборудование, солнечные панели"
+               style="flex:1; min-width:280px; padding:10px 14px; font-size:14px;
+                      background:#1a1b25; border:1px solid rgba(255,255,255,0.12);
+                      border-radius:8px; color:#e8eaed;">
+        <button id="niche-submit" type="submit" class="btn btn-primary">
+            <span class="btn-icon">🔍</span> <span class="btn-label">Найти товары</span>
+        </button>
+    </form>
+    <div id="niche-loader" style="display:none; align-items:center; gap:14px;
+              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🤖</span>
+        <div style="flex:1;">
+            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                Думаю над нишей <span id="niche-loader-name"></span>...
+            </div>
+            <div style="color:#9aa0ab; font-size:12px; margin-top:2px;">
+                Спрашиваю LLM. Если основная модель занята — переключаюсь на резерв (10–30 сек).
+            </div>
+        </div>
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+</div>
+
+<style>
+@keyframes bounce-emoji {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+}
+.bounce-emoji { animation: bounce-emoji 0.7s ease-in-out infinite; }
+
+.dot-pulse { display:inline-flex; gap:6px; }
+.dot-pulse span {
+    width:8px; height:8px; border-radius:50%;
+    background:#6366f1;
+    animation: dot-pulse 1.2s ease-in-out infinite;
+}
+.dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-pulse {
+    0%, 100% { opacity: 0.25; transform: scale(0.85); }
+    40%      { opacity: 1;    transform: scale(1.15); }
+}
+</style>
+
+<script>
+(function() {
+    var form = document.getElementById('niche-form');
+    if (!form) return;
+    form.addEventListener('submit', function() {
+        var input = form.querySelector('input[name="niche"]');
+        var btn = document.getElementById('niche-submit');
+        var loader = document.getElementById('niche-loader');
+        var name = document.getElementById('niche-loader-name');
+        if (input && name) name.textContent = '«' + input.value.trim() + '»';
+        if (btn) {
+            btn.disabled = true;
+            var label = btn.querySelector('.btn-label');
+            if (label) label.textContent = 'Ищу...';
+        }
+        if (loader) loader.style.display = 'flex';
+    });
+})();
+</script>
+
+{% if generated_products %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Этап 1 из 7 — далее: проверка спроса, фильтр, Alibaba, ВЭД, Avito, вердикт
+        </span>
+    </div>
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:30%;">Товар (RU)</th>
+                    <th style="width:30%;">Title (EN, для Alibaba)</th>
+                    <th>Почему имеет смысл для РФ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in generated_products %}
+                <tr>
+                    <td><div class="niche-name">{{ p.title_ru }}</div></td>
+                    <td><div class="niche-category">{{ p.title_en }}</div></td>
+                    <td>{{ p.rationale or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <!-- Stats Cards -->
 <div class="stats-row">
     <div class="stat-card">

@@ -6,6 +6,7 @@ NicheParser_China — Flask Web Application
 import logging
 import os
 import threading
+from typing import Optional
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -18,6 +19,7 @@ from core.config import (
 )
 from src.db import database as db
 from src.pipeline.runner import PipelineRunner
+from src.pipeline.agents.product_generator import generate_products
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -52,8 +54,8 @@ def inject_globals():
 
 # ============ Pages ============
 
-@app.route("/")
-def dashboard():
+def _dashboard_context(extra: Optional[dict] = None) -> dict:
+    """Собирает контекст дашборда. Используется обычным GET и страницей с генерацией."""
     filters = _read_filters(request.args)
     top_products = db.get_top_products(limit=20, filters=filters)
     niches = db.get_all_niches()
@@ -68,21 +70,30 @@ def dashboard():
         if top_products else 0
     )
 
-    return render_template(
-        "dashboard.html",
-        products=top_products,
-        niches=niches,
-        settings=settings,
-        stats={
+    ctx = {
+        "products": top_products,
+        "niches": niches,
+        "settings": settings,
+        "stats": {
             "total_niches": total,
             "profitable": profitable,
             "avg_margin": round(avg_margin, 1),
             "usd_rate": settings.get("usd_rate", 0),
         },
-        demand_timeline=demand_timeline,
-        filters=filters,
-        active_run=active_run,
-    )
+        "demand_timeline": demand_timeline,
+        "filters": filters,
+        "active_run": active_run,
+        "generated_products": [],
+        "generated_niche": "",
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
+
+
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html", **_dashboard_context())
 
 
 @app.route("/niche/<int:niche_id>")
@@ -143,6 +154,39 @@ def settings_page():
 
 
 # ============ Actions ============
+
+@app.route("/run-niche", methods=["POST"])
+def run_niche():
+    """Агент 1: по нише от пользователя получить 5–10 B2B-товаров через LLM."""
+    niche = (request.form.get("niche") or "").strip()
+    if not niche:
+        flash("Введи нишу — например, «станки» или «медоборудование»", "warning")
+        return redirect(url_for("dashboard"))
+
+    if len(niche) > 80:
+        flash("Слишком длинная ниша — сократи до 80 символов", "warning")
+        return redirect(url_for("dashboard"))
+
+    try:
+        products = generate_products(niche)
+    except Exception as e:
+        logger.error(f"Agent 1 unexpected error: {e}", exc_info=True)
+        flash("Не удалось сгенерировать товары — проверь логи", "error")
+        return redirect(url_for("dashboard"))
+
+    if not products:
+        flash(
+            "AI не вернул товары. Возможные причины: пустой OPENROUTER_API_KEY, "
+            "лимит free-модели или неожиданный формат ответа. Смотри logs/.",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+
+    return render_template("dashboard.html", **_dashboard_context({
+        "generated_products": products,
+        "generated_niche": niche,
+    }))
+
 
 @app.route("/run", methods=["POST"])
 def run_pipeline():
