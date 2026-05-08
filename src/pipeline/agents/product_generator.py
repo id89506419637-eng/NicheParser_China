@@ -8,6 +8,7 @@ Output: list[dict] — [{"title_ru": ..., "title_en": ..., "rationale": ...}, ..
 
 import json
 import logging
+import re
 from typing import List, Optional
 
 import requests
@@ -57,6 +58,10 @@ def _build_prompt(niche: str) -> str:
 - Избегай товаров с санкциями / двойным назначением.
 - title_en — точное англоязычное название как ищут на Alibaba.
 - rationale — 1 короткое предложение, почему этот товар имеет смысл для РФ.
+- wordstat_query — КОРОТКИЙ поисковый запрос для Яндекс.Wordstat: 2–4 слова,
+  без скобок, без марок, без перечислений. Это то, что реальный покупатель
+  вбивает в Яндекс. Пример: для title_ru «Эпоксидный клей промышленный
+  (марки EP-20, Henkel)» wordstat_query = «эпоксидный клей промышленный».
 
 Верни СТРОГО JSON по схеме:
 {{
@@ -64,6 +69,7 @@ def _build_prompt(niche: str) -> str:
     {{
       "title_ru": "ЧПУ-фрезерный станок по металлу (3-осевой)",
       "title_en": "CNC milling machine for metal",
+      "wordstat_query": "чпу фрезерный станок",
       "rationale": "Дефицит после ухода европейских брендов, спрос от малых цехов."
     }},
     ...
@@ -188,11 +194,25 @@ def _normalize(data: dict) -> List[dict]:
         title_ru = str(item.get("title_ru", "")).strip()
         title_en = str(item.get("title_en", "")).strip()
         rationale = str(item.get("rationale", "")).strip()
+        wordstat_query = str(item.get("wordstat_query", "")).strip().lower()
         if not title_ru and not title_en:
             continue
+        # Если LLM не вернул wordstat_query — соберём из title_ru: убираем скобки и хвост.
+        if not wordstat_query:
+            wordstat_query = _strip_for_wordstat(title_ru or title_en)
         out.append({
             "title_ru": title_ru or title_en,
             "title_en": title_en or title_ru,
+            "wordstat_query": wordstat_query,
             "rationale": rationale,
         })
     return out
+
+
+def _strip_for_wordstat(text: str) -> str:
+    """«Эпоксидный клей промышленный (марки EP-20, Henkel)» → «эпоксидный клей промышленный»."""
+    s = re.sub(r"\([^)]*\)", " ", text)  # убрать всё в скобках
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    # Ограничим до 5 слов — Wordstat не любит длинные хвосты
+    parts = s.split()
+    return " ".join(parts[:5])

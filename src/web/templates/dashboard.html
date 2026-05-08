@@ -98,23 +98,46 @@
     <div class="card-header">
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px;">
-            Этап 1 из 7 — далее: проверка спроса, фильтр, Alibaba, ВЭД, Avito, вердикт
+            Этапы 1–2 из 7 — далее: фильтр, Alibaba, ВЭД, Avito, вердикт
         </span>
     </div>
     <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width:30%;">Товар (RU)</th>
-                    <th style="width:30%;">Title (EN, для Alibaba)</th>
+                    <th style="width:26%;">Товар (RU)</th>
+                    <th style="width:24%;">Title (EN, для Alibaba)</th>
+                    <th style="width:12%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
             <tbody>
                 {% for p in generated_products %}
                 <tr>
-                    <td><div class="niche-name">{{ p.title_ru }}</div></td>
+                    <td>
+                        <div class="niche-name">{{ p.title_ru }}</div>
+                        {% if p.wordstat_query %}
+                            <div style="font-size:11px; color:#6b7280; margin-top:2px;">
+                                поиск: «{{ p.wordstat_query }}»
+                            </div>
+                        {% endif %}
+                    </td>
                     <td><div class="niche-category">{{ p.title_en }}</div></td>
+                    <td>
+                        {% set f = p.frequency or 0 %}
+                        {% if f >= 10000 %}
+                            {% set badge = 'margin--high' %}{% set hint = 'высокий спрос' %}
+                        {% elif f >= 3000 %}
+                            {% set badge = 'margin--good' %}{% set hint = 'средний спрос' %}
+                        {% elif f >= 500 %}
+                            {% set badge = 'margin--mid' %}{% set hint = 'низкий спрос' %}
+                        {% else %}
+                            {% set badge = 'margin--low' %}{% set hint = 'почти не ищут' %}
+                        {% endif %}
+                        <span class="margin-badge {{ badge }}" title="{{ hint }}">
+                            {% if f >= 1000 %}{{ "{:,.0f}".format(f).replace(',', ' ') }}{% else %}{{ f }}{% endif %}
+                        </span>
+                    </td>
                     <td>{{ p.rationale or '—' }}</td>
                 </tr>
                 {% endfor %}
@@ -191,10 +214,10 @@
                 <tr>
                     <th>Товар</th>
                     <th>Ниша / тип</th>
-                    <th>Цена Китай</th>
-                    <th>Себест. ₽</th>
-                    <th>Маржа %</th>
-                    <th>Маржа партия</th>
+                    <th title="Цена у поставщика на Alibaba за 1 штуку">Цена Китай $/шт</th>
+                    <th title="Полная себестоимость в РФ за 1 штуку (закупка + пошлина 10% + НДС 22% + доставка + банк)">Себест. ₽/шт</th>
+                    <th title="Маржа на одной штуке">Маржа %/шт</th>
+                    <th title="Прибыль за минимальную партию (MOQ штук от поставщика). При закупке контейнера прибыль будет в разы выше.">Прибыль за MOQ</th>
                     <th>Вердикт</th>
                     <th></th>
                 </tr>

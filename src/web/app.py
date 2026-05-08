@@ -20,6 +20,7 @@ from core.config import (
 from src.db import database as db
 from src.pipeline.runner import PipelineRunner
 from src.pipeline.agents.product_generator import generate_products
+from src.pipeline.agents.demand_checker import check_demand
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -181,6 +182,16 @@ def run_niche():
             "error",
         )
         return redirect(url_for("dashboard"))
+
+    # Агент 2 — обогащаем частотностью из Wordstat (mock, пока нет YANDEX_OAUTH_TOKEN).
+    # Не отсеивает; просто добавляет каждой записи поле 'frequency'.
+    try:
+        products = check_demand(products)
+    except Exception as e:
+        logger.error(f"Agent 2 unexpected error: {e}", exc_info=True)
+        # Не валим страницу — просто покажем без частотности
+        for p in products:
+            p.setdefault("frequency", 0)
 
     return render_template("dashboard.html", **_dashboard_context({
         "generated_products": products,
