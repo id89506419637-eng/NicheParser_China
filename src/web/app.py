@@ -21,6 +21,7 @@ from src.db import database as db
 from src.pipeline.runner import PipelineRunner
 from src.pipeline.agents.product_generator import generate_products
 from src.pipeline.agents.demand_checker import check_demand
+from src.pipeline.agents.niche_filter import filter_niches
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -192,6 +193,16 @@ def run_niche():
         # Не валим страницу — просто покажем без частотности
         for p in products:
             p.setdefault("frequency", 0)
+
+    # Агент 3 — LLM-фильтр перегретого ритейла. Не выкидывает из списка,
+    # размечает каждый продукт keep=True/False + filter_reason.
+    try:
+        products = filter_niches(products)
+    except Exception as e:
+        logger.error(f"Agent 3 unexpected error: {e}", exc_info=True)
+        for p in products:
+            p.setdefault("keep", True)
+            p.setdefault("filter_reason", "фильтр упал")
 
     return render_template("dashboard.html", **_dashboard_context({
         "generated_products": products,
