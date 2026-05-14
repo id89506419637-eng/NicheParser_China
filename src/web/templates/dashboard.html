@@ -99,18 +99,19 @@
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px;">
             {% set kept = generated_products|selectattr('keep')|list|length %}
-            Этапы 1–4 из 7 · оставлено {{ kept }}/{{ generated_products|length }} ·
-            далее: ВЭД, Avito, вердикт
+            Этапы 1–5 из 7 · оставлено {{ kept }}/{{ generated_products|length }} ·
+            далее: Avito, вердикт
         </span>
     </div>
     <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width:20%;">Товар (RU)</th>
-                    <th style="width:8%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
-                    <th style="width:9%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
-                    <th style="width:22%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
+                    <th style="width:18%;">Товар (RU)</th>
+                    <th style="width:7%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
+                    <th style="width:8%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
+                    <th style="width:20%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
+                    <th style="width:18%;" title="ВЭД-расчёт по лучшему офферу: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи в РФ пока эвристика × 2.5 — заменится Avito.">ВЭД-расчёт</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
@@ -160,7 +161,7 @@
                     </td>
                     <td>
                         {% if dropped %}
-                            <span class="text-muted" style="font-size:12px;">пропущено</span>
+                            <span class="text-muted" style="font-size:12px;">—</span>
                         {% elif p.alibaba_offers %}
                             {% set min_usd = p.alibaba_min_usd or 0 %}
                             {% set max_usd = p.alibaba_max_usd or 0 %}
@@ -191,6 +192,49 @@
                             </details>
                         {% else %}
                             <span class="text-muted" style="font-size:12px;">не найдено</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if dropped %}
+                            <span class="text-muted" style="font-size:12px;">—</span>
+                        {% elif p.ved_cost_per_unit_rub %}
+                            {% set m = p.ved_margin_percent or 0 %}
+                            {% if m >= 70 %}
+                                {% set m_class = 'margin--high' %}
+                            {% elif m >= 50 %}
+                                {% set m_class = 'margin--good' %}
+                            {% elif m >= 30 %}
+                                {% set m_class = 'margin--mid' %}
+                            {% else %}
+                                {% set m_class = 'margin--low' %}
+                            {% endif %}
+                            <div class="price-cell">
+                                <span class="price-main">
+                                    {{ "{:,.0f}".format(p.ved_cost_per_unit_rub).replace(',', ' ') }} ₽/шт
+                                </span>
+                                <span class="price-sub" style="margin-top:4px;">
+                                    Маржа:
+                                    <span class="margin-badge {{ m_class }}">{{ "%.0f"|format(m) }}%</span>
+                                </span>
+                                <span class="price-sub" style="margin-top:4px;">
+                                    Прибыль/MOQ: <strong>{{ "{:,.0f}".format(p.ved_margin_per_moq_rub or 0).replace(',', ' ') }} ₽</strong>
+                                </span>
+                            </div>
+                            {% if p.ved_breakdown %}
+                            <details style="margin-top:6px;">
+                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">разбивка</summary>
+                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab; line-height:1.4;">
+                                    <li>Закупка: {{ "{:,.0f}".format(p.ved_breakdown.purchase_rub).replace(',', ' ') }} ₽</li>
+                                    <li>Пошлина: {{ "{:,.0f}".format(p.ved_breakdown.duty_rub).replace(',', ' ') }} ₽</li>
+                                    <li>НДС: {{ "{:,.0f}".format(p.ved_breakdown.vat_rub).replace(',', ' ') }} ₽</li>
+                                    <li>Логистика: {{ "{:,.0f}".format(p.ved_breakdown.logistics_rub).replace(',', ' ') }} ₽</li>
+                                    <li>Банк: {{ "{:,.0f}".format(p.ved_breakdown.bank_rub).replace(',', ' ') }} ₽</li>
+                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.5): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                </ul>
+                            </details>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted" style="font-size:12px;">нет данных</span>
                         {% endif %}
                     </td>
                     <td>{{ p.rationale or '—' }}</td>

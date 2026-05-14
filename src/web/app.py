@@ -23,6 +23,7 @@ from src.pipeline.agents.product_generator import generate_products
 from src.pipeline.agents.demand_checker import check_demand
 from src.pipeline.agents.niche_filter import filter_niches
 from src.pipeline.agents.alibaba_finder import find_on_alibaba
+from src.pipeline.agents.ved_runner import run_ved
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -215,6 +216,13 @@ def run_niche():
             p.setdefault("alibaba_offers", [])
             p.setdefault("alibaba_min_usd", 0.0)
             p.setdefault("alibaba_min_moq", 0)
+
+    # Агент 5 — ВЭД-расчёт. Берёт лучший оффер, считает себестоимость
+    # и маржу. Цена продажи в РФ пока эвристика (× 2.5), заменим Avito.
+    try:
+        products = run_ved(products)
+    except Exception as e:
+        logger.error(f"Agent 5 unexpected error: {e}", exc_info=True)
 
     return render_template("dashboard.html", **_dashboard_context({
         "generated_products": products,
