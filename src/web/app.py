@@ -22,6 +22,7 @@ from src.pipeline.runner import PipelineRunner
 from src.pipeline.agents.product_generator import generate_products
 from src.pipeline.agents.demand_checker import check_demand
 from src.pipeline.agents.niche_filter import filter_niches
+from src.pipeline.agents.alibaba_finder import find_on_alibaba
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -203,6 +204,17 @@ def run_niche():
         for p in products:
             p.setdefault("keep", True)
             p.setdefault("filter_reason", "фильтр упал")
+
+    # Агент 4 — Alibaba. Только для keep=True. В mock-режиме быстро,
+    # в реале — 5–15с на товар.
+    try:
+        products = find_on_alibaba(products, top_per_query=5)
+    except Exception as e:
+        logger.error(f"Agent 4 unexpected error: {e}", exc_info=True)
+        for p in products:
+            p.setdefault("alibaba_offers", [])
+            p.setdefault("alibaba_min_usd", 0.0)
+            p.setdefault("alibaba_min_moq", 0)
 
     return render_template("dashboard.html", **_dashboard_context({
         "generated_products": products,
