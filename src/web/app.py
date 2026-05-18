@@ -12,10 +12,12 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     jsonify, flash, abort,
 )
+from flask_wtf.csrf import CSRFProtect
 
 from core.config import (
     SECRET_KEY, TARGET_CATEGORIES, NICHE_TYPES, VERDICTS,
     ENABLE_AVITO, ENABLE_WORDSTAT, ENABLE_ALIBABA, USE_MOCK_WORDSTAT,
+    FLASK_DEBUG,
 )
 from src.db import database as db
 from src.pipeline.runner import PipelineRunner
@@ -37,6 +39,19 @@ app = Flask(
     static_folder=os.path.join(os.path.dirname(__file__), "static"),
 )
 app.secret_key = SECRET_KEY
+
+# CSRF-защита всех POST-форм. В шаблонах каждая <form method="POST">
+# обязана содержать <input name="csrf_token" value="{{ csrf_token() }}">.
+csrf = CSRFProtect(app)
+
+# Cookie-флаги: HttpOnly блокирует кражу через document.cookie,
+# SameSite=Lax — защита от CSRF поверх токена, Secure включается
+# только вне debug (в проде по HTTPS).
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=not FLASK_DEBUG,
+)
 
 
 # === Глобальный лок: не даём запускать два пайплайна разом ===
@@ -176,7 +191,7 @@ def run_niche():
     try:
         products = generate_products(niche)
     except Exception as e:
-        logger.error(f"Agent 1 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 1 unexpected error: {type(e).__name__}: {e}")
         flash("Не удалось сгенерировать товары — проверь логи", "error")
         return redirect(url_for("dashboard"))
 
@@ -193,7 +208,7 @@ def run_niche():
     try:
         products = check_demand(products)
     except Exception as e:
-        logger.error(f"Agent 2 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 2 unexpected error: {e}")
         # Не валим страницу — просто покажем без частотности
         for p in products:
             p.setdefault("frequency", 0)
@@ -203,7 +218,7 @@ def run_niche():
     try:
         products = filter_niches(products)
     except Exception as e:
-        logger.error(f"Agent 3 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 3 unexpected error: {e}")
         for p in products:
             p.setdefault("keep", True)
             p.setdefault("filter_reason", "фильтр упал")
@@ -213,7 +228,7 @@ def run_niche():
     try:
         products = find_on_alibaba(products, top_per_query=5)
     except Exception as e:
-        logger.error(f"Agent 4 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 4 unexpected error: {e}")
         for p in products:
             p.setdefault("alibaba_offers", [])
             p.setdefault("alibaba_min_usd", 0.0)
@@ -225,7 +240,7 @@ def run_niche():
     try:
         products = find_on_avito(products, top_per_query=10)
     except Exception as e:
-        logger.error(f"Agent 6 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 6 unexpected error: {e}")
         for p in products:
             p.setdefault("avito_offers", [])
             p.setdefault("avito_price_rub_median", 0.0)
@@ -236,7 +251,7 @@ def run_niche():
     try:
         products = run_ved(products)
     except Exception as e:
-        logger.error(f"Agent 5 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 5 unexpected error: {e}")
 
     # Агент 7 — LLM-вердикт. По полному пакету данных каждому товару
     # присваивается ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM
@@ -244,7 +259,7 @@ def run_niche():
     try:
         products = issue_verdicts(products)
     except Exception as e:
-        logger.error(f"Agent 7 unexpected error: {e}", exc_info=True)
+        logger.error(f"Agent 7 unexpected error: {e}")
         for p in products:
             p.setdefault("verdict", "ИЗУЧИТЬ")
             p.setdefault("verdict_reason", "вердикт-агент упал")
@@ -272,7 +287,7 @@ def run_pipeline():
                 runner = PipelineRunner(max_niches=max_niches)
                 runner.run()
             except Exception as e:
-                logger.error(f"Pipeline worker crashed: {e}", exc_info=True)
+                logger.error(f"Pipeline worker crashed: {e}")
             finally:
                 _run_lock.release()
 

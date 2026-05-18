@@ -8,6 +8,7 @@
         <p class="page-subtitle">Wordstat × Alibaba × ВЭД-расчёт × AI-вердикт</p>
     </div>
     <form action="{{ url_for('run_pipeline') }}" method="POST" class="run-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="number" name="max_niches" min="1" max="100" value="5"
                class="input-small" title="Сколько ниш анализировать">
         <button type="submit" class="btn btn-primary" {% if active_run %}disabled{% endif %}>
@@ -27,6 +28,7 @@
     </div>
     <form id="niche-form" action="{{ url_for('run_niche') }}" method="POST"
           style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="niche" maxlength="80" required
                value="{{ generated_niche or '' }}"
                placeholder="например: станки, медоборудование, солнечные панели"

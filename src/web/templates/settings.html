@@ -8,11 +8,13 @@
         <p class="page-subtitle">Курсы, пошлина, НДС, логистика, пороги вердиктов</p>
     </div>
     <form method="POST" action="{{ url_for('refresh_rates') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-ghost">🔄 Обновить курсы ЦБ</button>
     </form>
 </div>
 
 <form method="POST" action="{{ url_for('update_settings') }}" class="card settings-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="grid-2">
         <div class="form-group">
             <label>Курс USD, ₽</label>
