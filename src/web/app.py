@@ -25,6 +25,7 @@ from src.pipeline.agents.niche_filter import filter_niches
 from src.pipeline.agents.alibaba_finder import find_on_alibaba
 from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
+from src.pipeline.agents.verdict_agent import issue_verdicts
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
 
@@ -236,6 +237,18 @@ def run_niche():
         products = run_ved(products)
     except Exception as e:
         logger.error(f"Agent 5 unexpected error: {e}", exc_info=True)
+
+    # Агент 7 — LLM-вердикт. По полному пакету данных каждому товару
+    # присваивается ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM
+    # упал — fallback на арифметику по тем же порогам.
+    try:
+        products = issue_verdicts(products)
+    except Exception as e:
+        logger.error(f"Agent 7 unexpected error: {e}", exc_info=True)
+        for p in products:
+            p.setdefault("verdict", "ИЗУЧИТЬ")
+            p.setdefault("verdict_reason", "вердикт-агент упал")
+            p.setdefault("verdict_source", "arithmetic")
 
     return render_template("dashboard.html", **_dashboard_context({
         "generated_products": products,

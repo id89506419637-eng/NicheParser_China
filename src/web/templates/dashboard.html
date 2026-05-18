@@ -99,20 +99,22 @@
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px;">
             {% set kept = generated_products|selectattr('keep')|list|length %}
-            Этапы 1–6 из 7 · оставлено {{ kept }}/{{ generated_products|length }} ·
-            далее: LLM-вердикт
+            {% set wins = generated_products|selectattr('verdict', 'equalto', 'ВЕЗЁМ')|list|length %}
+            Все 7 агентов отработали · оставлено {{ kept }}/{{ generated_products|length }} ·
+            вердикт «ВЕЗЁМ»: {{ wins }}
         </span>
     </div>
     <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width:15%;">Товар (RU)</th>
-                    <th style="width:7%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
-                    <th style="width:8%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
-                    <th style="width:18%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
-                    <th style="width:14%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
-                    <th style="width:18%;" title="ВЭД-расчёт: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи берётся из Авито; если Авито пуст — fallback на эвристику ×2.5.">ВЭД-расчёт</th>
+                    <th style="width:13%;">Товар (RU)</th>
+                    <th style="width:6%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
+                    <th style="width:7%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
+                    <th style="width:16%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
+                    <th style="width:13%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
+                    <th style="width:17%;" title="ВЭД-расчёт: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи берётся из Авито; если Авито пуст — fallback на эвристику ×2.5.">ВЭД-расчёт</th>
+                    <th style="width:15%;" title="Финальный вердикт Агента 7: LLM анализирует весь пакет (спрос, цены, маржу, насыщение рынка) и выдаёт решение ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM недоступен — арифметика по порогам ≥50%/≥100k₽.">Вердикт</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
@@ -275,6 +277,25 @@
                             {% endif %}
                         {% else %}
                             <span class="text-muted" style="font-size:12px;">нет данных</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if p.verdict %}
+                            <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}">
+                                {{ p.verdict }}
+                            </span>
+                            {% if p.verdict_reason %}
+                                <div style="font-size:11px; color:#9aa0ab; margin-top:6px; line-height:1.4;">
+                                    {{ p.verdict_reason }}
+                                </div>
+                            {% endif %}
+                            {% if p.verdict_source == 'arithmetic' %}
+                                <div style="font-size:10px; color:#6b7280; margin-top:4px;" title="LLM был недоступен — вердикт выдан по арифметическим порогам">
+                                    арифметика
+                                </div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted" style="font-size:12px;">—</span>
                         {% endif %}
                     </td>
                     <td>{{ p.rationale or '—' }}</td>
