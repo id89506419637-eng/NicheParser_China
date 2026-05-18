@@ -53,10 +53,15 @@ YANDEX_DIRECT_API_URL = "https://api.direct.yandex.com/json/v5/keywordsresearch"
 # товары, чтобы пайплайн давал end-to-end результат без антибот-инфраструктуры.
 USE_MOCK_ALIBABA = _bool(os.getenv("USE_MOCK_ALIBABA"), default=True)
 
+# === Avito ===
+# Авито без коммерческого Pro API нормально не парсится — те же блоки.
+# Mock даёт правдоподобную медианную цену продажи в РФ для ВЭД-калькулятора.
+USE_MOCK_AVITO = _bool(os.getenv("USE_MOCK_AVITO"), default=True)
+
 # === Feature flags ===
 ENABLE_WORDSTAT = _bool(os.getenv("ENABLE_WORDSTAT"), default=True)
 ENABLE_ALIBABA = _bool(os.getenv("ENABLE_ALIBABA"), default=True)
-ENABLE_AVITO = _bool(os.getenv("ENABLE_AVITO"), default=False)
+ENABLE_AVITO = _bool(os.getenv("ENABLE_AVITO"), default=True)
 
 # === ВЭД дефолты ===
 DEFAULT_DUTY_PERCENT = float(os.getenv("DEFAULT_DUTY_PERCENT", "10.0"))

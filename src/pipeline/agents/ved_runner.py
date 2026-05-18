@@ -4,16 +4,18 @@ NicheParser_China — Agent 5: ВЭД-расчёт
 (самый дешёвый из топ-5) и прогоняет через готовый VedCalculator:
 закупка → пошлина → НДС → логистика → банк → себестоимость в РФ.
 
-Цена продажи в РФ пока берётся по старой формуле «закупка × USD × 2.5» —
-этот hack заменится, когда подключим Avito (Агент 6).
+Цена продажи в РФ берётся из медианы Авито (Агент 6). Если Авито не нашёл
+объявлений — fallback на старую эвристику «закупка × курс × 2.5», чтобы
+вердикт всё равно посчитался.
 
 К каждому продукту прикрепляется:
-  ved_cost_per_unit_rub:   себестоимость 1 шт в РФ после растаможки
-  ved_price_rf_rub:         предполагаемая цена продажи в РФ за 1 шт
+  ved_cost_per_unit_rub:    себестоимость 1 шт в РФ после растаможки
+  ved_price_rf_rub:         цена продажи в РФ за 1 шт (из Авито или эвристики)
+  ved_price_source:         "avito" | "heuristic" — что использовали
   ved_margin_percent:       маржа % на единицу
   ved_margin_per_moq_rub:   прибыль за минимальную партию MOQ
   ved_breakdown:            полная разбивка (покупка, пошлина, НДС, ...)
-  ved_best_offer:           оффер, на котором считали (для прозрачности)
+  ved_best_offer:           оффер Alibaba, на котором считали (для прозрачности)
 """
 
 import logging
@@ -52,9 +54,15 @@ def run_ved(products: List[dict]) -> List[dict]:
         moq = max(1, int(best.get("moq") or 1))
         weight = float(best.get("weight_kg") or 0.5)
 
-        # Временный hack: цена продажи в РФ = закупка USD × курс × 2.5.
-        # Заменится реальной ценой с Avito (Агент 6).
-        price_rf_rub = price_cn * calc.settings.usd_rate * 2.5
+        # Цена продажи в РФ: медиана Авито, если Агент 6 что-то нашёл.
+        # Иначе fallback — старая эвристика «закупка × курс × 2.5».
+        avito_median = float(p.get("avito_price_rub_median") or 0)
+        if avito_median > 0:
+            price_rf_rub = avito_median
+            price_source = "avito"
+        else:
+            price_rf_rub = price_cn * calc.settings.usd_rate * 2.5
+            price_source = "heuristic"
 
         try:
             res = calc.calculate(
@@ -71,6 +79,7 @@ def run_ved(products: List[dict]) -> List[dict]:
 
         p["ved_cost_per_unit_rub"] = res["cost_per_unit_rub"]
         p["ved_price_rf_rub"] = res["price_rf_rub"]
+        p["ved_price_source"] = price_source
         p["ved_margin_percent"] = res["margin_percent"]
         p["ved_margin_per_moq_rub"] = res["margin_total_rub"]
         p["ved_breakdown"] = {
@@ -115,6 +124,7 @@ def _load_settings() -> VedSettings:
 def _attach_empty(p: dict) -> None:
     p["ved_cost_per_unit_rub"] = 0.0
     p["ved_price_rf_rub"] = 0.0
+    p["ved_price_source"] = None
     p["ved_margin_percent"] = 0.0
     p["ved_margin_per_moq_rub"] = 0.0
     p["ved_breakdown"] = None

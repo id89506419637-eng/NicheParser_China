@@ -23,6 +23,7 @@ from src.pipeline.agents.product_generator import generate_products
 from src.pipeline.agents.demand_checker import check_demand
 from src.pipeline.agents.niche_filter import filter_niches
 from src.pipeline.agents.alibaba_finder import find_on_alibaba
+from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings
@@ -217,8 +218,20 @@ def run_niche():
             p.setdefault("alibaba_min_usd", 0.0)
             p.setdefault("alibaba_min_moq", 0)
 
-    # Агент 5 — ВЭД-расчёт. Берёт лучший оффер, считает себестоимость
-    # и маржу. Цена продажи в РФ пока эвристика (× 2.5), заменим Avito.
+    # Агент 6 — Avito. Тянем медианную цену продажи в РФ для замены
+    # эвристики ×2.5 в ВЭД-расчёте. Идёт ДО Агента 5, чтобы тот мог
+    # использовать реальный price_rf_rub. В mock-режиме мгновенно.
+    try:
+        products = find_on_avito(products, top_per_query=10)
+    except Exception as e:
+        logger.error(f"Agent 6 unexpected error: {e}", exc_info=True)
+        for p in products:
+            p.setdefault("avito_offers", [])
+            p.setdefault("avito_price_rub_median", 0.0)
+            p.setdefault("avito_listings_count", 0)
+
+    # Агент 5 — ВЭД-расчёт. Берёт лучший оффер Alibaba + медиану Авито
+    # и считает себестоимость и маржу. Если Авито пуст — fallback на эвристику.
     try:
         products = run_ved(products)
     except Exception as e:

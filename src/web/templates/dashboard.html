@@ -99,19 +99,20 @@
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px;">
             {% set kept = generated_products|selectattr('keep')|list|length %}
-            Этапы 1–5 из 7 · оставлено {{ kept }}/{{ generated_products|length }} ·
-            далее: Avito, вердикт
+            Этапы 1–6 из 7 · оставлено {{ kept }}/{{ generated_products|length }} ·
+            далее: LLM-вердикт
         </span>
     </div>
     <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width:18%;">Товар (RU)</th>
+                    <th style="width:15%;">Товар (RU)</th>
                     <th style="width:7%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
                     <th style="width:8%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
-                    <th style="width:20%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
-                    <th style="width:18%;" title="ВЭД-расчёт по лучшему офферу: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи в РФ пока эвристика × 2.5 — заменится Avito.">ВЭД-расчёт</th>
+                    <th style="width:18%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
+                    <th style="width:14%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
+                    <th style="width:18%;" title="ВЭД-расчёт: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи берётся из Авито; если Авито пуст — fallback на эвристику ×2.5.">ВЭД-расчёт</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
@@ -197,6 +198,41 @@
                     <td>
                         {% if dropped %}
                             <span class="text-muted" style="font-size:12px;">—</span>
+                        {% elif p.avito_price_rub_median %}
+                            <div class="price-cell">
+                                <span class="price-main">
+                                    {{ "{:,.0f}".format(p.avito_price_rub_median).replace(',', ' ') }} ₽
+                                </span>
+                                <span class="price-sub">
+                                    {{ "{:,.0f}".format(p.avito_price_rub_min or 0).replace(',', ' ') }}–{{ "{:,.0f}".format(p.avito_price_rub_max or 0).replace(',', ' ') }} ₽
+                                </span>
+                                <span class="price-sub" style="margin-top:4px;">
+                                    {{ p.avito_listings_count or 0 }} объявл.
+                                </span>
+                            </div>
+                            {% if p.avito_offers %}
+                            <details style="margin-top:6px;">
+                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать объявления</summary>
+                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab;">
+                                    {% for o in p.avito_offers %}
+                                    <li style="margin-bottom:4px; line-height:1.4;">
+                                        <a href="{{ o.url }}" target="_blank" rel="noopener" style="color:#a5b4fc;">
+                                            {{ o.title|truncate(48) }}
+                                        </a>
+                                        — {{ "{:,.0f}".format(o.price_rub).replace(',', ' ') }} ₽
+                                        <span style="color:#6b7280;">({{ o.seller_type }})</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </details>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted" style="font-size:12px;">не найдено</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if dropped %}
+                            <span class="text-muted" style="font-size:12px;">—</span>
                         {% elif p.ved_cost_per_unit_rub %}
                             {% set m = p.ved_margin_percent or 0 %}
                             {% if m >= 70 %}
@@ -229,7 +265,11 @@
                                     <li>НДС: {{ "{:,.0f}".format(p.ved_breakdown.vat_rub).replace(',', ' ') }} ₽</li>
                                     <li>Логистика: {{ "{:,.0f}".format(p.ved_breakdown.logistics_rub).replace(',', ' ') }} ₽</li>
                                     <li>Банк: {{ "{:,.0f}".format(p.ved_breakdown.bank_rub).replace(',', ' ') }} ₽</li>
-                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.5): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                    {% if p.ved_price_source == 'avito' %}
+                                    <li style="margin-top:4px; color:#a5b4fc;">Цена продажи РФ (медиана Авито): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                    {% else %}
+                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.5, Авито пуст): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                    {% endif %}
                                 </ul>
                             </details>
                             {% endif %}
@@ -419,16 +459,6 @@
 </div>
 {% endif %}
 
-<!-- Avito stub -->
-<div class="card card--muted">
-    <div class="card-header">
-        <h2 class="card-title">🟢 Авито-аналитика</h2>
-    </div>
-    <div class="avito-stub">
-        <p>Модуль выключен. Подключается после появления доступа к Авито API.</p>
-        <button class="btn btn-ghost" disabled>Подключить (скоро)</button>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
