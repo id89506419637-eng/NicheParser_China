@@ -45,6 +45,14 @@ class Product:
     margin_total_rub: float = 0.0      # абсолютная маржа на партию MOQ
     verdict: str = ""                   # ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ
 
+    # Контекст с Авито (для прозрачности расчёта в истории)
+    avito_price_median: float = 0.0    # медианная цена продажи в РФ
+    avito_listings_count: int = 0       # объявлений в выдаче (насыщение рынка)
+
+    # Обоснование вердикта от Агента 7 (или арифметики, если LLM упал)
+    verdict_reason: str = ""
+    verdict_source: str = ""            # 'llm' | 'arithmetic'
+
     # Метаданные
     competition_count: int = 0          # всего товаров на Alibaba по запросу
     created_at: str = ""

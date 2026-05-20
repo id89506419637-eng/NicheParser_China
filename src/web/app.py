@@ -6,6 +6,7 @@ NicheParser_China — Flask Web Application
 import logging
 import os
 import threading
+from datetime import datetime
 from typing import Optional
 
 from flask import (
@@ -29,7 +30,7 @@ from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
 from src.pipeline.agents.verdict_agent import issue_verdicts
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
-from core.models import VedSettings
+from core.models import VedSettings, Niche, Product, DemandSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,89 @@ app.config.update(
 
 # === Глобальный лок: не даём запускать два пайплайна разом ===
 _run_lock = threading.Lock()
+
+# Последний прогон через /run-niche держится в памяти процесса для богатого
+# детального отображения сверху (офферы Alibaba, объявления Авито, разбивка
+# ВЭД, обоснование вердикта). В БД при этом сохраняется свёрнутая версия —
+# одна ниша = один лучший оффер с ВЭД — она и идёт в общий «Топ» внизу.
+_last_niche_run: dict = {"niche": "", "products": []}
+
+
+def _persist_run(products: list) -> int:
+    """
+    После /run-niche сохраняем результат в общую БД, чтобы он попал в «Топ»
+    и историю. Сохраняем ТОЛЬКО keep=True — дроп-товары видны лишь в свежем
+    поиске сверху (как «отброшено Агентом 3»), в БД они только засоряли бы
+    статистику.
+
+    Структура: 1 LLM-продукт → 1 niche + 1 product (лучший оффер с ВЭД).
+    Возвращает число реально сохранённых ниш.
+    """
+    saved = 0
+    today = datetime.now().date().isoformat()
+
+    for p in products:
+        if not p.get("keep", True):
+            continue
+        # Без лучшего оффера ВЭД не считался — сохранять нечего
+        ved_offer = p.get("ved_best_offer") or {}
+        if not ved_offer:
+            continue
+
+        niche = Niche(
+            name_ru=p.get("title_ru") or p.get("title_en") or "?",
+            name_en=p.get("title_en") or "",
+            category="",
+            niche_type="",
+            is_seasonal=False,
+            last_frequency=int(p.get("frequency") or 0),
+            pain_points="[]",
+            created_at=datetime.now().isoformat(),
+        )
+        niche_id = db.save_niche(niche)
+
+        db.save_demand_snapshot(DemandSnapshot(
+            niche_id=niche_id,
+            frequency=int(p.get("frequency") or 0),
+            snapshot_date=today,
+        ))
+
+        # Берём именно тот оффер, на котором считался ВЭД (по url),
+        # чтобы цена/MOQ/вес в БД соответствовали маржe.
+        ali_offers = p.get("alibaba_offers") or []
+        best = next(
+            (o for o in ali_offers if o.get("product_url") == ved_offer.get("url")),
+            ali_offers[0] if ali_offers else None,
+        )
+        if not best:
+            continue
+
+        product = Product(
+            niche_id=niche_id,
+            title_en=best.get("title_en") or p.get("title_en") or "",
+            price_usd_min=float(best.get("price_usd_min") or 0),
+            price_usd_max=float(best.get("price_usd_max") or 0),
+            moq=int(best.get("moq") or 0),
+            supplier_rating=float(best.get("supplier_rating") or 0),
+            deals_count=int(best.get("deals_count") or 0),
+            certificates=",".join(best.get("certificates") or []),
+            weight_kg=float(best.get("weight_kg") or 0),
+            product_url=best.get("product_url") or "",
+            cost_total_rub=float(p.get("ved_cost_per_unit_rub") or 0),
+            margin_percent=float(p.get("ved_margin_percent") or 0),
+            margin_total_rub=float(p.get("ved_margin_per_moq_rub") or 0),
+            verdict=p.get("verdict") or "",
+            avito_price_median=float(p.get("avito_price_rub_median") or 0),
+            avito_listings_count=int(p.get("avito_listings_count") or 0),
+            verdict_reason=p.get("verdict_reason") or "",
+            verdict_source=p.get("verdict_source") or "",
+            competition_count=int(p.get("alibaba_competition") or 0),
+            created_at=datetime.now().isoformat(),
+        )
+        db.save_product(product)
+        saved += 1
+
+    return saved
 
 
 @app.context_processor
@@ -104,8 +188,11 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         "demand_timeline": demand_timeline,
         "filters": filters,
         "active_run": active_run,
-        "generated_products": [],
-        "generated_niche": "",
+        # Подмешиваем последний поиск через форму ниши, чтобы результаты не
+        # пропадали при следующих переходах/запросах. Хранится в памяти
+        # процесса (см. _last_niche_run).
+        "generated_products": _last_niche_run["products"],
+        "generated_niche": _last_niche_run["niche"],
     }
     if extra:
         ctx.update(extra)
@@ -265,10 +352,23 @@ def run_niche():
             p.setdefault("verdict_reason", "вердикт-агент упал")
             p.setdefault("verdict_source", "arithmetic")
 
-    return render_template("dashboard.html", **_dashboard_context({
-        "generated_products": products,
-        "generated_niche": niche,
-    }))
+    # Запомнили результат в памяти процесса для богатого детального вида
+    # сверху (с офферами/разбивкой/обоснованием) — это нужно прямо сейчас,
+    # пока пользователь смотрит на страницу.
+    _last_niche_run["niche"] = niche
+    _last_niche_run["products"] = products
+
+    # И параллельно сохраняем сжатую версию (одна niche + один лучший оффер)
+    # в БД — чтобы результат попал в общий «Топ товаров» внизу и в /history.
+    # Падение сохранения не должно ломать показ страницы.
+    try:
+        saved = _persist_run(products)
+        if saved:
+            logger.info(f"/run-niche: '{niche}' — сохранено {saved} ниш в БД")
+    except Exception as e:
+        logger.error(f"_persist_run failed for '{niche}': {type(e).__name__}: {e}")
+
+    return render_template("dashboard.html", **_dashboard_context())
 
 
 @app.route("/run", methods=["POST"])

@@ -96,34 +96,35 @@
 </script>
 
 {% if generated_products %}
+{% set passed = generated_products|rejectattr('keep', 'equalto', false)|rejectattr('verdict', 'equalto', 'НЕ ВЕЗЁМ')|list %}
+{% set rejected = generated_products|reject('in', passed)|list %}
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px;">
-            {% set kept = generated_products|selectattr('keep')|list|length %}
-            {% set wins = generated_products|selectattr('verdict', 'equalto', 'ВЕЗЁМ')|list|length %}
-            Все 7 агентов отработали · оставлено {{ kept }}/{{ generated_products|length }} ·
-            вердикт «ВЕЗЁМ»: {{ wins }}
+            {% set wins = passed|selectattr('verdict', 'equalto', 'ВЕЗЁМ')|list|length %}
+            Все 7 агентов отработали · в работу: {{ passed|length }}/{{ generated_products|length }} ·
+            «ВЕЗЁМ»: {{ wins }}{% if rejected %} · отброшено: {{ rejected|length }}{% endif %}
         </span>
     </div>
+    {% if passed %}
     <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
                     <th style="width:13%;">Товар (RU)</th>
                     <th style="width:6%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
-                    <th style="width:7%;" title="Решение Агента 3 — стоит ли тащить дальше через Alibaba и ВЭД-расчёт">Фильтр</th>
                     <th style="width:16%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
                     <th style="width:13%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
-                    <th style="width:17%;" title="ВЭД-расчёт: себестоимость 1 шт (закупка + 10% пошлина + 22% НДС + логистика + 2% банк), маржа на единице, прибыль за партию MOQ. Цена продажи берётся из Авито; если Авито пуст — fallback на эвристику ×2.5.">ВЭД-расчёт</th>
+                    <th style="width:17%;" title="ВЭД-расчёт по ХУДШЕМУ сценарию: закупка по максимальной цене Alibaba, продажа по минимальной цене с Авито, пошлина 10% + НДС 22% + логистика + 2% банк. Если по этому пессимистичному расчёту маржа всё равно ≥50% — нишу стоит брать с запасом прочности.">ВЭД-расчёт (худ.)</th>
                     <th style="width:15%;" title="Финальный вердикт Агента 7: LLM анализирует весь пакет (спрос, цены, маржу, насыщение рынка) и выдаёт решение ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM недоступен — арифметика по порогам ≥50%/≥100k₽.">Вердикт</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
             <tbody>
-                {% for p in generated_products %}
-                {% set dropped = p.keep is defined and not p.keep %}
-                <tr {% if dropped %}style="opacity:0.5;"{% endif %}>
+                {% for p in passed %}
+                {% set dropped = false %}
+                <tr>
                     <td>
                         <div class="niche-name" {% if dropped %}style="text-decoration:line-through;"{% endif %}>{{ p.title_ru }}</div>
                         <div style="font-size:11px; color:#6b7280; margin-top:2px;">{{ p.title_en }}</div>
@@ -147,22 +148,6 @@
                         <span class="margin-badge {{ badge }}" title="{{ hint }}">
                             {% if f >= 1000 %}{{ "{:,.0f}".format(f).replace(',', ' ') }}{% else %}{{ f }}{% endif %}
                         </span>
-                    </td>
-                    <td>
-                        {% if p.keep is defined %}
-                            {% if p.keep %}
-                                <span class="margin-badge margin--good" title="{{ p.filter_reason or '' }}">✓ беру</span>
-                            {% else %}
-                                <span class="margin-badge margin--low" title="{{ p.filter_reason or '' }}">✗ дроп</span>
-                            {% endif %}
-                            {% if p.filter_reason %}
-                                <div style="font-size:11px; color:#6b7280; margin-top:4px; line-height:1.3;">
-                                    {{ p.filter_reason }}
-                                </div>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% endif %}
                     </td>
                     <td>
                         {% if dropped %}
@@ -269,10 +254,10 @@
                                     <li>НДС: {{ "{:,.0f}".format(p.ved_breakdown.vat_rub).replace(',', ' ') }} ₽</li>
                                     <li>Логистика: {{ "{:,.0f}".format(p.ved_breakdown.logistics_rub).replace(',', ' ') }} ₽</li>
                                     <li>Банк: {{ "{:,.0f}".format(p.ved_breakdown.bank_rub).replace(',', ' ') }} ₽</li>
-                                    {% if p.ved_price_source == 'avito' %}
-                                    <li style="margin-top:4px; color:#a5b4fc;">Цена продажи РФ (медиана Авито): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                    {% if p.ved_price_source == 'avito_min' %}
+                                    <li style="margin-top:4px; color:#a5b4fc;">Цена продажи РФ (мин Авито, худ. сценарий): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
                                     {% else %}
-                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.5, Авито пуст): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
+                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.0, Авито пуст): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
                                     {% endif %}
                                 </ul>
                             </details>
@@ -306,6 +291,45 @@
             </tbody>
         </table>
     </div>
+    {% else %}
+    <div style="padding:32px 24px; text-align:center; color:#9aa0ab;">
+        <div style="font-size:32px; margin-bottom:8px;">🤔</div>
+        <div>Ни один товар не прошёл фильтр или выгодную проверку.</div>
+        <div style="font-size:12px; margin-top:4px;">Раскрой блок «Отброшено» ниже — там увидишь причины.</div>
+    </div>
+    {% endif %}
+
+    {% if rejected %}
+    <details style="border-top:1px solid rgba(255,255,255,0.06); padding:14px 24px;">
+        <summary style="cursor:pointer; color:#9aa0ab; font-size:13px;">
+            🗑 Отброшено ({{ rejected|length }}) — раскрыть и посмотреть причины
+        </summary>
+        <ul style="margin:12px 0 0 0; padding-left:18px; font-size:12px; color:#9aa0ab; line-height:1.6;">
+            {% for p in rejected %}
+            <li style="margin-bottom:8px;">
+                <span style="color:#e8eaed; font-weight:600;">{{ p.title_ru }}</span>
+                {% if p.keep is defined and not p.keep %}
+                    <span class="margin-badge margin--low" style="margin-left:6px;">✗ дроп Агента 3</span>
+                    {% if p.filter_reason %}
+                        <div style="color:#9aa0ab; margin-top:2px;">{{ p.filter_reason }}</div>
+                    {% endif %}
+                {% else %}
+                    <span class="verdict-badge verdict-не-везём" style="margin-left:6px;">НЕ ВЕЗЁМ</span>
+                    {% if p.ved_margin_percent is defined %}
+                        <span style="margin-left:6px; color:#6b7280;">
+                            маржа {{ "%.0f"|format(p.ved_margin_percent) }}%,
+                            прибыль {{ "{:,.0f}".format(p.ved_margin_per_moq_rub or 0).replace(',', ' ') }} ₽/MOQ
+                        </span>
+                    {% endif %}
+                    {% if p.verdict_reason %}
+                        <div style="color:#9aa0ab; margin-top:2px;">{{ p.verdict_reason }}</div>
+                    {% endif %}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -389,6 +413,15 @@
                 <tr>
                     <td>
                         <div class="niche-name" title="{{ p.title_en }}">{{ p.title_en|truncate(50) }}</div>
+                        {% if p.offers_count and p.offers_count > 1 %}
+                            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;"
+                                 title="В этой нише {{ p.offers_count }} офферов от разных поставщиков. Показан с лучшей маржой ({{ '%.0f'|format(p.margin_percent_max) }}%). Минимальная в нише: {{ '%.0f'|format(p.margin_percent_min) }}%.">
+                                + ещё {{ p.offers_count - 1 }} оффер{% if p.offers_count - 1 == 1 %}{% elif p.offers_count - 1 < 5 %}а{% else %}ов{% endif %}
+                                {% if p.margin_percent_min != p.margin_percent_max %}
+                                    · разброс маржи {{ '%.0f'|format(p.margin_percent_min) }}–{{ '%.0f'|format(p.margin_percent_max) }}%
+                                {% endif %}
+                            </div>
+                        {% endif %}
                         {% if p.certificates %}
                             <div class="cert-row">
                                 {% for c in p.certificates.split(',') %}

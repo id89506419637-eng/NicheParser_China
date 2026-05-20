@@ -26,6 +26,13 @@ def get_connection():
         conn.close()
 
 
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    """Идемпотентный ADD COLUMN: проверяем PRAGMA, добавляем только если нет."""
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def init_db() -> None:
     """Создать таблицы и первую запись настроек ВЭД, если БД пуста."""
     with get_connection() as conn:
@@ -109,6 +116,13 @@ def init_db() -> None:
                 error_message TEXT DEFAULT ''
             )
         """)
+
+        # Миграция: колонки, добавленные после первого релиза. SQLite не
+        # поддерживает ADD COLUMN IF NOT EXISTS, поэтому проверяем вручную.
+        _ensure_column(conn, "products", "avito_price_median",   "REAL DEFAULT 0")
+        _ensure_column(conn, "products", "avito_listings_count", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "products", "verdict_reason",       "TEXT DEFAULT ''")
+        _ensure_column(conn, "products", "verdict_source",       "TEXT DEFAULT ''")
 
         # индексы для частых выборок
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_niche ON products(niche_id)")
@@ -201,8 +215,10 @@ def save_product(product: Product) -> int:
                 moq, supplier_rating, deals_count, certificates,
                 weight_kg, length_cm, width_cm, height_cm, product_url,
                 cost_total_rub, margin_percent, margin_total_rub,
-                verdict, competition_count, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                verdict, competition_count, created_at,
+                avito_price_median, avito_listings_count,
+                verdict_reason, verdict_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             product.niche_id, product.title_en, product.price_usd_min,
             product.price_usd_max, product.moq, product.supplier_rating,
@@ -211,6 +227,8 @@ def save_product(product: Product) -> int:
             product.height_cm, product.product_url,
             product.cost_total_rub, product.margin_percent, product.margin_total_rub,
             product.verdict, product.competition_count, now,
+            product.avito_price_median, product.avito_listings_count,
+            product.verdict_reason, product.verdict_source,
         ))
         return cur.lastrowid
 
@@ -225,7 +243,16 @@ def get_products_by_niche(niche_id: int) -> List[dict]:
 
 
 def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[dict]:
-    """Топ товаров по марже с опциональными фильтрами."""
+    """
+    Топ ниш по марже: одна строка на нишу — лучший оффер по margin_percent
+    из её продуктов. Чтобы 8 «моделей» одной ниши (Model D521, F754, ...)
+    не засоряли таблицу как разные товары.
+
+    К каждой строке прикреплены:
+      offers_count       — сколько всего офферов в этой нише после фильтров
+      margin_percent_min — минимальная маржа среди офферов (для оценки разброса)
+      margin_percent_max — максимальная (=margin_percent самой строки)
+    """
     filters = filters or {}
     where = ["1=1"]
     params: list = []
@@ -236,6 +263,10 @@ def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[di
     if filters.get("verdict"):
         where.append("p.verdict = ?")
         params.append(filters["verdict"])
+    else:
+        # По умолчанию НЕ ВЕЗЁМ не показываем — это шум, такие ниши
+        # пользователь не повезёт. Виден только если явно отфильтровать.
+        where.append("p.verdict != 'НЕ ВЕЗЁМ'")
     if filters.get("niche_type"):
         where.append("n.niche_type = ?")
         params.append(filters["niche_type"])
@@ -246,13 +277,24 @@ def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[di
         where.append("p.margin_percent >= ?")
         params.append(float(filters["min_margin"]))
 
+    # Окно по niche_id — ROW_NUMBER=1 даёт лучший оффер ниши; COUNT — все офферы
+    # этой ниши, прошедшие фильтры. Доступно в SQLite ≥ 3.25.
     query = f"""
-        SELECT p.*, n.name_ru AS niche_name_ru, n.category AS niche_category,
-               n.niche_type, n.is_seasonal, n.pain_points
-        FROM products p
-        JOIN niches n ON n.id = p.niche_id
-        WHERE {' AND '.join(where)}
-        ORDER BY p.margin_percent DESC
+        SELECT * FROM (
+            SELECT p.*, n.name_ru AS niche_name_ru, n.category AS niche_category,
+                   n.niche_type, n.is_seasonal, n.pain_points,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY p.niche_id ORDER BY p.margin_percent DESC
+                   ) AS _rn,
+                   COUNT(*)  OVER (PARTITION BY p.niche_id) AS offers_count,
+                   MIN(p.margin_percent) OVER (PARTITION BY p.niche_id) AS margin_percent_min,
+                   MAX(p.margin_percent) OVER (PARTITION BY p.niche_id) AS margin_percent_max
+            FROM products p
+            JOIN niches n ON n.id = p.niche_id
+            WHERE {' AND '.join(where)}
+        )
+        WHERE _rn = 1
+        ORDER BY margin_percent DESC
         LIMIT ?
     """
     params.append(limit)
@@ -262,6 +304,7 @@ def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[di
         result = []
         for r in rows:
             d = dict(r)
+            d.pop("_rn", None)
             d["is_seasonal"] = bool(d.get("is_seasonal", 0))
             try:
                 d["pain_points_list"] = json.loads(d.get("pain_points") or "[]")

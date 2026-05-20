@@ -1,19 +1,19 @@
 """
-NicheParser_China — Agent 5: ВЭД-расчёт
-Для каждого продукта (keep=True) выбирает лучший оффер с Alibaba
-(самый дешёвый из топ-5) и прогоняет через готовый VedCalculator:
-закупка → пошлина → НДС → логистика → банк → себестоимость в РФ.
+NicheParser_China — Agent 5: ВЭД-расчёт (худший сценарий)
+Считает экономику ПЕССИМИСТИЧНО, чтобы не строить иллюзий:
+  - закупка по МАКСИМАЛЬНОЙ цене из топ-5 офферов Alibaba (не минимальной)
+  - цена продажи в РФ по МИНИМАЛЬНОЙ из объявлений Авито (не медиане)
+  - если Авито пуст — пессимистичная эвристика «закупка × курс × 2.0»
 
-Цена продажи в РФ берётся из медианы Авито (Агент 6). Если Авито не нашёл
-объявлений — fallback на старую эвристику «закупка × курс × 2.5», чтобы
-вердикт всё равно посчитался.
+Это даёт нижнюю оценку маржи. Реальная маржа обычно выше — но если
+по этому расчёту вердикт ВЕЗЁМ, значит ниша выдержит и просадки.
 
 К каждому продукту прикрепляется:
   ved_cost_per_unit_rub:    себестоимость 1 шт в РФ после растаможки
-  ved_price_rf_rub:         цена продажи в РФ за 1 шт (из Авито или эвристики)
-  ved_price_source:         "avito" | "heuristic" — что использовали
-  ved_margin_percent:       маржа % на единицу
-  ved_margin_per_moq_rub:   прибыль за минимальную партию MOQ
+  ved_price_rf_rub:         цена продажи в РФ за 1 шт (мин из Авито или эвристика)
+  ved_price_source:         "avito_min" | "heuristic_worst" — что использовали
+  ved_margin_percent:       маржа % на единицу (худший сценарий)
+  ved_margin_per_moq_rub:   прибыль за минимальную партию MOQ (худший сценарий)
   ved_breakdown:            полная разбивка (покупка, пошлина, НДС, ...)
   ved_best_offer:           оффер Alibaba, на котором считали (для прозрачности)
 """
@@ -50,19 +50,26 @@ def run_ved(products: List[dict]) -> List[dict]:
             _attach_empty(p)
             continue
 
-        price_cn = float(best["price_usd_min"])
+        # Худший сценарий по закупке: берём ВЕРХ диапазона цены, не низ.
+        # price_usd_max бывает 0 в mock — тогда падаем на min.
+        price_cn = float(best.get("price_usd_max") or best.get("price_usd_min") or 0)
+        if price_cn <= 0:
+            _attach_empty(p)
+            continue
         moq = max(1, int(best.get("moq") or 1))
         weight = float(best.get("weight_kg") or 0.5)
 
-        # Цена продажи в РФ: медиана Авито, если Агент 6 что-то нашёл.
-        # Иначе fallback — старая эвристика «закупка × курс × 2.5».
-        avito_median = float(p.get("avito_price_rub_median") or 0)
-        if avito_median > 0:
-            price_rf_rub = avito_median
-            price_source = "avito"
+        # Худший сценарий по продаже в РФ: берём МИНИМАЛЬНУЮ цену с Авито,
+        # не медиану — если придётся демпинговать против самого дешёвого
+        # конкурента, экономика должна сходиться. Без Авито — пессимистичная
+        # эвристика ×2.0 вместо старой ×2.5.
+        avito_min = float(p.get("avito_price_rub_min") or 0)
+        if avito_min > 0:
+            price_rf_rub = avito_min
+            price_source = "avito_min"
         else:
-            price_rf_rub = price_cn * calc.settings.usd_rate * 2.5
-            price_source = "heuristic"
+            price_rf_rub = price_cn * calc.settings.usd_rate * 2.0
+            price_source = "heuristic_worst"
 
         try:
             res = calc.calculate(
