@@ -81,15 +81,16 @@ def test_save_and_fetch_product(tmp_db):
 
 
 def test_get_top_products_respects_min_margin_filter(tmp_db):
-    niche_id = db.save_niche(Niche(
-        name_ru="промышленный насос",
-        category="Промышленное оборудование и станки",
-    ))
-    db.save_product(Product(niche_id=niche_id, title_en="low", margin_percent=20,
+    # Каждый товар в своей нише — иначе ROW_NUMBER=1 оставит только лучший
+    n1 = db.save_niche(Niche(name_ru="ниша low", category="Промышленное оборудование и станки"))
+    n2 = db.save_niche(Niche(name_ru="ниша mid", category="Промышленное оборудование и станки"))
+    n3 = db.save_niche(Niche(name_ru="ниша high", category="Промышленное оборудование и станки"))
+
+    db.save_product(Product(niche_id=n1, title_en="low", margin_percent=20,
                             verdict="НЕ ВЕЗЁМ"))
-    db.save_product(Product(niche_id=niche_id, title_en="mid", margin_percent=45,
+    db.save_product(Product(niche_id=n2, title_en="mid", margin_percent=45,
                             verdict="ИЗУЧИТЬ"))
-    db.save_product(Product(niche_id=niche_id, title_en="high", margin_percent=80,
+    db.save_product(Product(niche_id=n3, title_en="high", margin_percent=80,
                             verdict="ВЕЗЁМ"))
 
     filtered = db.get_top_products(filters={"min_margin": 40})

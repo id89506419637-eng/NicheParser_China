@@ -40,29 +40,112 @@ def search_alibaba(query: str, limit: int = ALIBABA_MAX_PRODUCTS_PER_NICHE) -> T
         return [], 0
 
 
+# ── Якори цен по типу товара (для mock) ───────────────────────────────
+# (keywords, price_usd_min, price_usd_max, weight_kg_range, moq_options, competition_range)
+_ALIBABA_ANCHORS = [
+    # Тяжёлое оборудование / станки
+    ({"станок", "станки", "чпу", "cnc", "lathe", "milling", "фрезерный",
+      "токарный", "лазерный", "плазменный", "сварочный", "компрессор",
+      "генератор", "трансформатор", "экскаватор", "погрузчик", "кран",
+      "machine", "cutting"},
+     500, 15_000, (50, 2500), [1, 1, 2, 5], (800, 12_000)),
+
+    # Средне-дорогое оборудование
+    ({"насос", "pump", "двигатель", "motor", "конвейер", "conveyor",
+      "дробилка", "crusher", "бетономешалка", "mixer", "пресс", "press",
+      "вентиляция", "кондиционер", "котёл", "boiler", "печь", "furnace"},
+     80, 2_000, (15, 300), [1, 2, 5, 10], (1_000, 20_000)),
+
+    # Электроника / приборы / автоматизация
+    ({"датчик", "sensor", "контроллер", "controller", "plc", "частотник",
+      "инвертер", "inverter", "панель", "panel", "дисплей", "display",
+      "камера", "camera", "видеонаблюдение", "сервопривод", "servo"},
+     15, 300, (0.3, 5), [5, 10, 20, 50, 100], (2_000, 45_000)),
+
+    # Расходники / мелкие комплектующие
+    ({"гайка", "болт", "винт", "шайба", "подшипник", "bearing", "фильтр",
+      "filter", "ремень", "belt", "сальник", "seal", "прокладка", "gasket",
+      "кабель", "cable", "провод", "wire", "шланг", "hose", "клей", "glue",
+      "герметик", "sealant", "абразив", "abrasive", "лента", "tape",
+      "bolt", "nut", "washer", "screw"},
+     0.5, 20, (0.01, 2), [50, 100, 200, 500, 1000], (5_000, 45_000)),
+
+    # Инструмент
+    ({"инструмент", "tool", "сверло", "drill", "фреза", "cutter", "резец",
+      "ключ", "wrench", "отвёртка", "screwdriver", "пила", "saw",
+      "шлифовальный", "grinder", "полировальный"},
+     5, 150, (0.5, 15), [5, 10, 20, 50], (3_000, 35_000)),
+
+    # Медицина / лаборатория
+    ({"медицинский", "medical", "стерилизатор", "sterilizer", "центрифуга",
+      "centrifuge", "микроскоп", "microscope", "анализатор", "analyzer",
+      "рентген", "xray", "узи", "ultrasound", "эндоскоп", "endoscope"},
+     200, 5_000, (10, 200), [1, 1, 2, 5], (500, 8_000)),
+
+    # Солнечная энергетика
+    ({"солнечная", "solar", "инвертор", "аккумулятор", "battery",
+      "литий", "lithium"},
+     30, 500, (5, 30), [5, 10, 20, 50], (2_000, 25_000)),
+]
+
+
+def _estimate_alibaba_params(query: str, rng: random.Random) -> dict:
+    """Определяет реалистичные параметры mock-оффера по типу товара."""
+    words = set(query.lower().split())
+
+    for anchors, p_min, p_max, w_range, moqs, comp_range in _ALIBABA_ANCHORS:
+        if words & anchors:
+            return {
+                "price_min": p_min,
+                "price_max": p_max,
+                "weight_range": w_range,
+                "moq_options": moqs,
+                "competition": rng.randint(*comp_range),
+            }
+
+    # Эвристика по длине запроса (аналог avito.py)
+    word_count = len(query.split())
+    if word_count >= 4 or len(query) > 30:
+        return {"price_min": 200, "price_max": 5_000, "weight_range": (20, 500),
+                "moq_options": [1, 2, 5], "competition": rng.randint(500, 8_000)}
+    elif word_count >= 3 or len(query) > 20:
+        return {"price_min": 30, "price_max": 800, "weight_range": (2, 50),
+                "moq_options": [5, 10, 20, 50], "competition": rng.randint(1_000, 20_000)}
+    elif word_count <= 1 and len(query) < 12:
+        return {"price_min": 1, "price_max": 50, "weight_range": (0.1, 5),
+                "moq_options": [20, 50, 100, 200], "competition": rng.randint(5_000, 45_000)}
+    else:
+        return {"price_min": 10, "price_max": 300, "weight_range": (1, 25),
+                "moq_options": [10, 20, 50, 100], "competition": rng.randint(2_000, 30_000)}
+
+
 def _mock_products(query: str, limit: int) -> Tuple[List[AlibabaProduct], int]:
     """
     Детерминированный mock: для одного и того же query даёт одинаковые товары,
-    чтобы история и динамика выглядели стабильно. Цены/MOQ/вес варьируются
-    так, чтобы ВЭД-калькулятор давал разные вердикты (ВЕЗЁМ/ИЗУЧИТЬ/НЕ ВЕЗЁМ).
+    чтобы история и динамика выглядели стабильно. Цены/MOQ/вес определяются
+    типом товара через _estimate_alibaba_params, чтобы ВЭД-калькулятор давал
+    адекватные вердикты (а не $15 за токарный станок).
     """
     seed = int(hashlib.md5(query.encode("utf-8")).hexdigest()[:8], 16)
     rng = random.Random(seed)
 
-    # Базовая цена привязана к «тяжести» запроса (длинный/промышленный = дороже)
-    base_price = 15 + (len(query) % 20) * rng.uniform(8, 35)
-    base_weight = rng.uniform(0.5, 25.0)
-    volume = rng.uniform(0.005, 0.25)  # cbm
-    competition = rng.randint(800, 45_000)
+    params = _estimate_alibaba_params(query, rng)
+    p_min = params["price_min"]
+    p_max = params["price_max"]
+    w_lo, w_hi = params["weight_range"]
+    competition = params["competition"]
 
     count = min(limit, rng.randint(4, 8))
     products: List[AlibabaProduct] = []
     for i in range(count):
-        price_min = round(base_price * rng.uniform(0.85, 1.0), 2)
-        price_max = round(price_min * rng.uniform(1.1, 1.8), 2)
-        moq = rng.choice([1, 5, 10, 20, 50, 100])
-        weight = round(base_weight * rng.uniform(0.9, 1.2), 2)
-        length = round((volume ** (1 / 3)) * 100 * rng.uniform(0.8, 1.2), 1)
+        base = rng.uniform(p_min, p_max)
+        price_min = round(base * rng.uniform(0.85, 1.0), 2)
+        price_max = round(base * rng.uniform(1.1, 1.8), 2)
+        moq = rng.choice(params["moq_options"])
+        weight = round(rng.uniform(w_lo, w_hi), 2)
+        # Габариты из веса (грубая эвристика: плотность ~500 кг/м³)
+        volume_m3 = weight / 500
+        length = round((volume_m3 ** (1 / 3)) * 100 * rng.uniform(0.8, 1.2), 1)
 
         certs = rng.sample(["CE", "ISO", "RoHS", "FDA", "FCC"], k=rng.randint(0, 3))
 
@@ -82,7 +165,8 @@ def _mock_products(query: str, limit: int) -> Tuple[List[AlibabaProduct], int]:
         ))
 
     logger.info(
-        f"Alibaba [MOCK]: '{query}' — {len(products)} товаров, конкуренция ≈ {competition}"
+        f"Alibaba [MOCK]: '{query}' — {len(products)} товаров, "
+        f"${p_min}–${p_max}/шт, конкуренция ≈ {competition}"
     )
     return products, competition
 
