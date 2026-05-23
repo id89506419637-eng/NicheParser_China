@@ -53,6 +53,13 @@ class Product:
     verdict_reason: str = ""
     verdict_source: str = ""            # 'llm' | 'arithmetic'
 
+    # Скоринг поставщика от Агента 8
+    supplier_score: int = 0              # композитный балл 0–100
+    supplier_risk_level: str = ""         # 'низкий' / 'средний' / 'высокий'
+    supplier_audit_recommendation: str = ""  # что проверить вручную
+    supplier_audit_source: str = ""       # 'llm' / 'arithmetic' / 'skip'
+    supplier_red_flags: str = ""          # JSON-массив строк с конкретными флагами
+
     # Метаданные
     competition_count: int = 0          # всего товаров на Alibaba по запросу
     created_at: str = ""

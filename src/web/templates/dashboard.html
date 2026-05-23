@@ -39,19 +39,42 @@
             <span class="btn-icon">🔍</span> <span class="btn-label">Найти товары</span>
         </button>
     </form>
-    <div id="niche-loader" style="display:none; align-items:center; gap:14px;
+    <div id="niche-loader" style="display:none; flex-direction:column; gap:12px;
               padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
-        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🤖</span>
-        <div style="flex:1;">
-            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
-                Думаю над нишей <span id="niche-loader-name"></span>...
+        <div style="display:flex; align-items:center; gap:14px;">
+            <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🤖</span>
+            <div style="flex:1;">
+                <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                    Анализирую нишу <span id="niche-loader-name"></span>
+                </div>
+                <div id="niche-loader-step" style="color:#a5b4fc; font-size:12px; margin-top:2px;">
+                    Запускаю пайплайн...
+                </div>
             </div>
-            <div style="color:#9aa0ab; font-size:12px; margin-top:2px;">
-                Спрашиваю LLM. Если основная модель занята — переключаюсь на резерв (10–30 сек).
+            <div style="text-align:right;">
+                <div id="niche-loader-timer" style="font-variant-numeric:tabular-nums;
+                     font-size:18px; font-weight:600; color:#e8eaed;">0с</div>
+                <div style="color:#6b7280; font-size:11px;">обычно 15–40с</div>
             </div>
         </div>
-        <div class="dot-pulse"><span></span><span></span><span></span></div>
+        <div id="niche-loader-steps" style="display:grid; grid-template-columns:repeat(4, 1fr);
+             gap:6px 14px; font-size:11px; color:#6b7280; line-height:1.5;">
+            <!-- заполняется JS -->
+        </div>
     </div>
+</div>
+
+<!-- ✅ Done banner — показывается после рефреша если только что был прогон -->
+<div id="niche-done-banner" style="display:none; margin:0 0 16px 0;
+     padding:12px 18px; background:rgba(16,185,129,0.12);
+     border:1px solid rgba(16,185,129,0.35); border-radius:8px;
+     color:#34d399; font-size:14px; font-weight:600;
+     align-items:center; justify-content:space-between; gap:14px;">
+    <span><span style="font-size:18px;">✅</span>
+          Готово! Анализ занял <span id="niche-done-duration">—</span></span>
+    <button type="button" id="niche-done-close" aria-label="Закрыть"
+            style="background:none; border:none; color:#34d399; font-size:18px;
+                   cursor:pointer; padding:0 4px; opacity:0.6;">✕</button>
 </div>
 
 <style>
@@ -77,13 +100,72 @@
 
 <script>
 (function() {
+    // === Шаги пайплайна с псевдо-таймингом (секунды от старта) ===
+    // На mock-данных порядки времени: LLM-шаги ~3-8с, остальное <1с.
+    var STEPS = [
+        { from: 0,  label: 'Агент 1 · Генерирую товары (LLM)' },
+        { from: 6,  label: 'Агент 2 · Проверяю спрос (Wordstat)' },
+        { from: 8,  label: 'Агент 3 · Фильтрую слабые ниши' },
+        { from: 10, label: 'Агент 4 · Ищу поставщиков на Alibaba' },
+        { from: 13, label: 'Агент 5 · Проверяю цены на Авито' },
+        { from: 16, label: 'Агент 6 · Считаю пессимистичный ВЭД' },
+        { from: 19, label: 'Агент 7 · Выношу вердикты (LLM)' },
+        { from: 26, label: 'Агент 8 · Скорю поставщиков (LLM)' }
+    ];
+
+    function fmtDuration(seconds) {
+        if (seconds < 60) return seconds.toFixed(0) + 'с';
+        var m = Math.floor(seconds / 60);
+        var s = Math.floor(seconds % 60);
+        return m + 'м ' + (s < 10 ? '0' : '') + s + 'с';
+    }
+
+    // === Done banner: показываем если только что вернулись с прогона ===
+    function showDoneBanner() {
+        var startStr = sessionStorage.getItem('niche-run-started');
+        if (!startStr) return;
+        var start = parseInt(startStr, 10);
+        if (!start || isNaN(start)) return;
+        var elapsed = Math.max(0, (Date.now() - start) / 1000);
+        sessionStorage.removeItem('niche-run-started');
+        // Показываем только если есть свежие результаты на странице (значит прогон отработал)
+        if (!document.querySelector('.card-title') ||
+            elapsed > 600 ||  // 10 минут — не считаем за «только что»
+            !document.body.textContent.includes('агентов отработали')) return;
+
+        var banner = document.getElementById('niche-done-banner');
+        var dur = document.getElementById('niche-done-duration');
+        if (!banner || !dur) return;
+        dur.textContent = fmtDuration(elapsed);
+        banner.style.display = 'flex';
+        var close = document.getElementById('niche-done-close');
+        if (close) close.addEventListener('click', function() { banner.style.display = 'none'; });
+        setTimeout(function() { banner.style.opacity = '0.5'; }, 5000);
+    }
+
+    // === Лоадер с таймером и шагами ===
     var form = document.getElementById('niche-form');
     if (!form) return;
+
+    // Заполняем список шагов в лоадере (изначально серые)
+    var stepsBox = document.getElementById('niche-loader-steps');
+    if (stepsBox) {
+        STEPS.forEach(function(s, i) {
+            var el = document.createElement('div');
+            el.id = 'niche-step-' + i;
+            el.textContent = '⏳ ' + s.label;
+            stepsBox.appendChild(el);
+        });
+    }
+
     form.addEventListener('submit', function() {
         var input = form.querySelector('input[name="niche"]');
         var btn = document.getElementById('niche-submit');
         var loader = document.getElementById('niche-loader');
         var name = document.getElementById('niche-loader-name');
+        var timer = document.getElementById('niche-loader-timer');
+        var stepText = document.getElementById('niche-loader-step');
+
         if (input && name) name.textContent = '«' + input.value.trim() + '»';
         if (btn) {
             btn.disabled = true;
@@ -91,7 +173,44 @@
             if (label) label.textContent = 'Ищу...';
         }
         if (loader) loader.style.display = 'flex';
+
+        // Запоминаем старт для done-banner после рефреша
+        sessionStorage.setItem('niche-run-started', Date.now().toString());
+
+        var startedAt = Date.now();
+        function tick() {
+            var elapsed = (Date.now() - startedAt) / 1000;
+            if (timer) timer.textContent = fmtDuration(elapsed);
+
+            // Какой шаг сейчас активен — последний у которого from <= elapsed
+            var activeIdx = 0;
+            for (var i = 0; i < STEPS.length; i++) {
+                if (STEPS[i].from <= elapsed) activeIdx = i;
+            }
+            STEPS.forEach(function(s, i) {
+                var el = document.getElementById('niche-step-' + i);
+                if (!el) return;
+                if (i < activeIdx) {
+                    el.textContent = '✅ ' + s.label;
+                    el.style.color = '#34d399';
+                } else if (i === activeIdx) {
+                    el.textContent = '🔄 ' + s.label;
+                    el.style.color = '#a5b4fc';
+                    el.style.fontWeight = '600';
+                } else {
+                    el.textContent = '⏳ ' + s.label;
+                    el.style.color = '#6b7280';
+                    el.style.fontWeight = '400';
+                }
+            });
+            if (stepText && STEPS[activeIdx]) stepText.textContent = STEPS[activeIdx].label + '...';
+        }
+        tick();
+        setInterval(tick, 500);
     });
+
+    // Запуск done-баннера при загрузке страницы
+    showDoneBanner();
 })();
 </script>
 
@@ -101,10 +220,15 @@
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
-        <span class="text-muted" style="font-size:12px;">
+        <span class="text-muted" style="font-size:12px; text-align:right;">
             {% set wins = passed|selectattr('verdict', 'equalto', 'ВЕЗЁМ')|list|length %}
-            Все 7 агентов отработали · в работу: {{ passed|length }}/{{ generated_products|length }} ·
+            Все 8 агентов отработали · в работу: {{ passed|length }}/{{ generated_products|length }} ·
             «ВЕЗЁМ»: {{ wins }}{% if rejected %} · отброшено: {{ rejected|length }}{% endif %}
+            {% if generated_finished_at %}
+                <div style="margin-top:2px; color:#6b7280;" title="{{ generated_finished_at }}">
+                    🕐 проверено: {{ generated_finished_at|ago }}
+                </div>
+            {% endif %}
         </span>
     </div>
     {% if passed %}
@@ -117,7 +241,8 @@
                     <th style="width:16%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
                     <th style="width:13%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
                     <th style="width:17%;" title="ВЭД-расчёт по ХУДШЕМУ сценарию: закупка по максимальной цене Alibaba, продажа по минимальной цене с Авито, пошлина 10% + НДС 22% + логистика + 2% банк. Если по этому пессимистичному расчёту маржа всё равно ≥50% — нишу стоит брать с запасом прочности.">ВЭД-расчёт (худ.)</th>
-                    <th style="width:15%;" title="Финальный вердикт Агента 7: LLM анализирует весь пакет (спрос, цены, маржу, насыщение рынка) и выдаёт решение ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM недоступен — арифметика по порогам ≥50%/≥100k₽.">Вердикт</th>
+                    <th style="width:13%;" title="Финальный вердикт Агента 7: LLM анализирует весь пакет (спрос, цены, маржу, насыщение рынка) и выдаёт решение ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM недоступен — арифметика по порогам ≥50%/≥100k₽.">Вердикт</th>
+                    <th style="width:11%;" title="Агент 8 — скоринг поставщика по данным Alibaba (рейтинг, число сделок, сертификаты) + LLM поверх. Композитный балл 0–100, уровень риска и список красных флагов с рекомендацией по ручной проверке.">Поставщик (скор)</th>
                     <th>Почему имеет смысл для РФ</th>
                 </tr>
             </thead>
@@ -285,6 +410,51 @@
                             <span class="text-muted" style="font-size:12px;">—</span>
                         {% endif %}
                     </td>
+                    <td>
+                        {% if p.supplier_score is defined and p.supplier_score > 0 %}
+                            {% set ss = p.supplier_score %}
+                            {% if ss >= 70 %}
+                                {% set ss_class = 'margin--good' %}
+                            {% elif ss >= 40 %}
+                                {% set ss_class = 'margin--mid' %}
+                            {% else %}
+                                {% set ss_class = 'margin--low' %}
+                            {% endif %}
+                            <div class="price-cell">
+                                <span class="margin-badge {{ ss_class }}" title="Скор: {{ ss }}/100">
+                                    {{ ss }}/100
+                                </span>
+                                <span class="price-sub" style="margin-top:4px;">
+                                    {% if p.supplier_risk_level == 'низкий' %}
+                                        🟢 {{ p.supplier_risk_level }}
+                                    {% elif p.supplier_risk_level == 'средний' %}
+                                        🟡 {{ p.supplier_risk_level }}
+                                    {% else %}
+                                        🔴 {{ p.supplier_risk_level }}
+                                    {% endif %}
+                                    риск
+                                </span>
+                            </div>
+                            {% if p.supplier_red_flags %}
+                            <details style="margin-top:6px;">
+                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">⚠ {{ p.supplier_red_flags|length }} флаг{{ 'ов' if p.supplier_red_flags|length >= 5 else ('а' if p.supplier_red_flags|length >= 2 else '') }}</summary>
+                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#fbbf24; line-height:1.4;">
+                                    {% for flag in p.supplier_red_flags %}
+                                    <li>{{ flag }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </details>
+                            {% endif %}
+                            {% if p.supplier_audit_recommendation %}
+                                <div style="font-size:11px; color:#9aa0ab; margin-top:4px; line-height:1.3;">{{ p.supplier_audit_recommendation }}</div>
+                            {% endif %}
+                            {% if p.supplier_audit_source == 'arithmetic' %}
+                                <div style="font-size:10px; color:#6b7280; margin-top:2px;">арифметика</div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted" style="font-size:12px;">—</span>
+                        {% endif %}
+                    </td>
                     <td>{{ p.rationale or '—' }}</td>
                 </tr>
                 {% endfor %}
@@ -335,22 +505,22 @@
 
 <!-- Stats Cards -->
 <div class="stats-row">
-    <div class="stat-card">
-        <div class="stat-value">{{ stats.total_niches }}</div>
-        <div class="stat-label">Всего ниш</div>
+    <div class="stat-card" title="Сколько раз ты запускала анализ — каждое нажатие «Найти товары» считается одним прогоном.">
+        <div class="stat-value">{{ stats.total_runs }}</div>
+        <div class="stat-label">Всего прогонов</div>
+        <div class="stat-icon">🔁</div>
+    </div>
+    <div class="stat-card" title="Уникальных ниш в базе (после дедупликации). Одна и та же ниша, прогнанная несколько раз, считается один раз.">
+        <div class="stat-value">{{ stats.unique_niches }}</div>
+        <div class="stat-label">Уникальных ниш</div>
         <div class="stat-icon">📦</div>
     </div>
-    <div class="stat-card stat-card--green">
+    <div class="stat-card stat-card--green" title="Сколько товаров получили финальный вердикт «ВЕЗЁМ» — это кандидаты, которые стоит обсудить с поставщиком и брокером.">
         <div class="stat-value">{{ stats.profitable }}</div>
         <div class="stat-label">Вердикт «ВЕЗЁМ»</div>
         <div class="stat-icon">💰</div>
     </div>
-    <div class="stat-card stat-card--amber">
-        <div class="stat-value">{{ stats.avg_margin }}%</div>
-        <div class="stat-label">Средняя маржа</div>
-        <div class="stat-icon">📈</div>
-    </div>
-    <div class="stat-card stat-card--blue">
+    <div class="stat-card stat-card--blue" title="Курс доллара по ЦБ РФ — используется в ВЭД-расчёте.">
         <div class="stat-value">{% if stats.usd_rate %}{{ "%.1f"|format(stats.usd_rate) }}{% else %}—{% endif %}</div>
         <div class="stat-label">Курс USD (ЦБ)</div>
         <div class="stat-icon">💱</div>
@@ -398,8 +568,7 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Товар</th>
-                    <th>Ниша / тип</th>
+                    <th style="width:28%;">Товар</th>
                     <th title="Цена у поставщика на Alibaba за 1 штуку">Цена Китай $/шт</th>
                     <th title="Полная себестоимость в РФ за 1 штуку (закупка + пошлина 10% + НДС 22% + доставка + банк)">Себест. ₽/шт</th>
                     <th title="Маржа на одной штуке">Маржа %/шт</th>
@@ -412,9 +581,22 @@
                 {% for p in products %}
                 <tr>
                     <td>
-                        <div class="niche-name" title="{{ p.title_en }}">{{ p.title_en|truncate(50) }}</div>
-                        {% if p.offers_count and p.offers_count > 1 %}
+                        <div class="niche-name">{{ p.niche_name_ru or p.title_en }}</div>
+                        {% if p.title_en and p.title_en != p.niche_name_ru %}
+                            <div style="font-size:11px; color:#6b7280; margin-top:2px;">{{ p.title_en|truncate(60) }}</div>
+                        {% endif %}
+                        {% if p.created_at %}
                             <div style="font-size:11px; color:#9aa0ab; margin-top:2px;"
+                                 title="Когда этот товар был промониторен агентами. Если давно — стоит перезапустить, цены могли измениться.">
+                                🕐 {{ p.created_at|ago }}
+                            </div>
+                        {% endif %}
+                        <div class="niche-category" style="margin-top:4px;">
+                            {% if p.niche_type %}<span class="type-badge">{{ p.niche_type }}</span>{% endif %}
+                            {% if p.is_seasonal %}<span class="type-badge type-badge--amber">🌦 сезон</span>{% endif %}
+                        </div>
+                        {% if p.offers_count and p.offers_count > 1 %}
+                            <div style="font-size:11px; color:#9aa0ab; margin-top:4px;"
                                  title="В этой нише {{ p.offers_count }} офферов от разных поставщиков. Показан с лучшей маржой ({{ '%.0f'|format(p.margin_percent_max) }}%). Минимальная в нише: {{ '%.0f'|format(p.margin_percent_min) }}%.">
                                 + ещё {{ p.offers_count - 1 }} оффер{% if p.offers_count - 1 == 1 %}{% elif p.offers_count - 1 < 5 %}а{% else %}ов{% endif %}
                                 {% if p.margin_percent_min != p.margin_percent_max %}
@@ -423,19 +605,12 @@
                             </div>
                         {% endif %}
                         {% if p.certificates %}
-                            <div class="cert-row">
+                            <div class="cert-row" style="margin-top:4px;">
                                 {% for c in p.certificates.split(',') %}
                                     <span class="cert-badge">{{ c }}</span>
                                 {% endfor %}
                             </div>
                         {% endif %}
-                    </td>
-                    <td>
-                        <div class="niche-name">{{ p.niche_name_ru }}</div>
-                        <div class="niche-category">
-                            <span class="type-badge">{{ p.niche_type or '—' }}</span>
-                            {% if p.is_seasonal %}<span class="type-badge type-badge--amber">🌦 сезон</span>{% endif %}
-                        </div>
                     </td>
                     <td>
                         <div class="price-cell">

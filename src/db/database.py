@@ -4,13 +4,77 @@ SQLite CRUD для ниш, товаров, истории спроса, наст
 """
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import List, Optional
 
 from core.config import DB_PATH
 from core.models import Niche, Product, DemandSnapshot
+
+
+# Стоп-слова и шумные префиксы при сравнении ниш на дубликаты.
+# Цель: «Аппарат УЗИ портативный» и «Портативный УЗИ-аппарат» должны считаться
+# одним и тем же. Не трогаем оригинальный name_ru — только нормализуем для сравнения.
+_NICHE_NORM_STOPWORDS = {
+    "и", "для", "на", "по", "от", "из", "с", "в", "к", "под", "над",
+    "the", "a", "an", "for", "of",
+}
+
+
+def _normalize_niche_name(name: str) -> str:
+    """
+    Нормализация для DEDUP-сравнения ниш.
+    - lowercase
+    - удалить пунктуацию (-, /, и т.п.)
+    - убрать стоп-слова
+    - отсортировать оставшиеся слова (порядок не важен)
+    - результат: каноническая «отпечатка» строки.
+    """
+    if not name:
+        return ""
+    s = name.lower().strip()
+    s = re.sub(r"[^\w\sЀ-ӿ]+", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s).strip()
+    words = [w for w in s.split() if w and w not in _NICHE_NORM_STOPWORDS]
+    words.sort()
+    return " ".join(words)
+
+
+def _find_duplicate_niche_id(conn, niche_name: str, threshold: float = 0.85) -> Optional[int]:
+    """
+    Вернуть id существующей ниши, которая считается дубликатом для niche_name,
+    или None если такой нет. Сначала точное совпадение, потом fuzzy ≥ threshold
+    по нормализованной форме.
+    """
+    target = _normalize_niche_name(niche_name)
+    if not target:
+        return None
+
+    exact = conn.execute(
+        "SELECT id FROM niches WHERE name_ru = ?", (niche_name,)
+    ).fetchone()
+    if exact:
+        return exact["id"]
+
+    rows = conn.execute("SELECT id, name_ru FROM niches").fetchall()
+    best_id: Optional[int] = None
+    best_score = 0.0
+    for r in rows:
+        cand = _normalize_niche_name(r["name_ru"] or "")
+        if not cand:
+            continue
+        if cand == target:
+            return r["id"]
+        ratio = SequenceMatcher(None, target, cand).ratio()
+        if ratio > best_score:
+            best_score = ratio
+            best_id = r["id"]
+    if best_score >= threshold:
+        return best_id
+    return None
 
 
 @contextmanager
@@ -123,6 +187,11 @@ def init_db() -> None:
         _ensure_column(conn, "products", "avito_listings_count", "INTEGER DEFAULT 0")
         _ensure_column(conn, "products", "verdict_reason",       "TEXT DEFAULT ''")
         _ensure_column(conn, "products", "verdict_source",       "TEXT DEFAULT ''")
+        _ensure_column(conn, "products", "supplier_score",              "INTEGER DEFAULT 0")
+        _ensure_column(conn, "products", "supplier_risk_level",         "TEXT DEFAULT ''")
+        _ensure_column(conn, "products", "supplier_audit_recommendation", "TEXT DEFAULT ''")
+        _ensure_column(conn, "products", "supplier_audit_source",       "TEXT DEFAULT ''")
+        _ensure_column(conn, "products", "supplier_red_flags",          "TEXT DEFAULT '[]'")
 
         # индексы для частых выборок
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_niche ON products(niche_id)")
@@ -145,16 +214,18 @@ def init_db() -> None:
 # === Niches ===
 
 def save_niche(niche: Niche) -> int:
-    """Создать или обновить нишу по уникальному name_ru. Возвращает id."""
+    """
+    Создать или обновить нишу с дедупликацией: точное совпадение name_ru ИЛИ
+    fuzzy-совпадение нормализованной формы (≥85%). Это защищает от дублей,
+    когда LLM в разных прогонах называет одну нишу чуть иначе
+    («УЗИ-аппарат портативный» vs «Аппарат УЗИ портативный»).
+    """
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM niches WHERE name_ru = ?", (niche.name_ru,))
-        row = cur.fetchone()
-
+        existing_id = _find_duplicate_niche_id(conn, niche.name_ru)
         now = niche.created_at or datetime.now().isoformat()
 
-        if row:
-            niche_id = row["id"]
+        if existing_id:
             cur.execute("""
                 UPDATE niches SET
                     name_en = ?, category = ?, niche_type = ?, is_seasonal = ?,
@@ -163,9 +234,9 @@ def save_niche(niche: Niche) -> int:
             """, (
                 niche.name_en, niche.category, niche.niche_type,
                 int(niche.is_seasonal), niche.last_frequency, niche.pain_points,
-                niche_id,
+                existing_id,
             ))
-            return niche_id
+            return existing_id
 
         cur.execute("""
             INSERT INTO niches (name_ru, name_en, category, niche_type,
@@ -217,8 +288,11 @@ def save_product(product: Product) -> int:
                 cost_total_rub, margin_percent, margin_total_rub,
                 verdict, competition_count, created_at,
                 avito_price_median, avito_listings_count,
-                verdict_reason, verdict_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                verdict_reason, verdict_source,
+                supplier_score, supplier_risk_level,
+                supplier_audit_recommendation, supplier_audit_source,
+                supplier_red_flags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             product.niche_id, product.title_en, product.price_usd_min,
             product.price_usd_max, product.moq, product.supplier_rating,
@@ -229,6 +303,9 @@ def save_product(product: Product) -> int:
             product.verdict, product.competition_count, now,
             product.avito_price_median, product.avito_listings_count,
             product.verdict_reason, product.verdict_source,
+            product.supplier_score, product.supplier_risk_level,
+            product.supplier_audit_recommendation, product.supplier_audit_source,
+            product.supplier_red_flags or "[]",
         ))
         return cur.lastrowid
 
@@ -239,7 +316,16 @@ def get_products_by_niche(niche_id: int) -> List[dict]:
             "SELECT * FROM products WHERE niche_id = ? ORDER BY margin_percent DESC",
             (niche_id,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_hydrate_product_row(dict(r)) for r in rows]
+
+
+def _hydrate_product_row(d: dict) -> dict:
+    """Дозаполнение полей продукта при чтении из БД (распаковка JSON-полей)."""
+    try:
+        d["supplier_red_flags"] = json.loads(d.get("supplier_red_flags") or "[]")
+    except (json.JSONDecodeError, TypeError):
+        d["supplier_red_flags"] = []
+    return d
 
 
 def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[dict]:
@@ -310,7 +396,7 @@ def get_top_products(limit: int = 10, filters: Optional[dict] = None) -> List[di
                 d["pain_points_list"] = json.loads(d.get("pain_points") or "[]")
             except (json.JSONDecodeError, TypeError):
                 d["pain_points_list"] = []
-            result.append(d)
+            result.append(_hydrate_product_row(d))
         return result
 
 
@@ -331,7 +417,7 @@ def get_product_by_id(product_id: int) -> Optional[dict]:
             d["pain_points_list"] = json.loads(d.get("pain_points") or "[]")
         except (json.JSONDecodeError, TypeError):
             d["pain_points_list"] = []
-        return d
+        return _hydrate_product_row(d)
 
 
 def delete_product(product_id: int) -> None:
@@ -458,3 +544,16 @@ def get_active_run() -> Optional[dict]:
             "SELECT * FROM run_logs WHERE status = 'running' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return dict(row) if row else None
+
+
+def count_runs() -> int:
+    """
+    Оценка количества прогонов: количество уникальных «минут» в created_at
+    у продуктов. Один прогон укладывается в одну минуту, поэтому это даёт
+    адекватный счётчик независимо от того, через какой endpoint он запущен.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT substr(created_at, 1, 16)) AS n FROM products"
+        ).fetchone()
+        return int(row["n"] or 0)

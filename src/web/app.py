@@ -3,6 +3,7 @@ NicheParser_China — Flask Web Application
 Роуты: дашборд, карточка ниши/товара, история, настройки + JSON API.
 """
 
+import json
 import logging
 import os
 import threading
@@ -29,6 +30,7 @@ from src.pipeline.agents.alibaba_finder import find_on_alibaba
 from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
 from src.pipeline.agents.verdict_agent import issue_verdicts
+from src.pipeline.agents.supplier_audit import audit_suppliers
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
 
@@ -62,7 +64,7 @@ _run_lock = threading.Lock()
 # детального отображения сверху (офферы Alibaba, объявления Авито, разбивка
 # ВЭД, обоснование вердикта). В БД при этом сохраняется свёрнутая версия —
 # одна ниша = один лучший оффер с ВЭД — она и идёт в общий «Топ» внизу.
-_last_niche_run: dict = {"niche": "", "products": []}
+_last_niche_run: dict = {"niche": "", "products": [], "finished_at": ""}
 
 
 def _persist_run(products: list) -> int:
@@ -133,6 +135,11 @@ def _persist_run(products: list) -> int:
             avito_listings_count=int(p.get("avito_listings_count") or 0),
             verdict_reason=p.get("verdict_reason") or "",
             verdict_source=p.get("verdict_source") or "",
+            supplier_score=int(p.get("supplier_score") or 0),
+            supplier_risk_level=p.get("supplier_risk_level") or "",
+            supplier_audit_recommendation=p.get("supplier_audit_recommendation") or "",
+            supplier_audit_source=p.get("supplier_audit_source") or "",
+            supplier_red_flags=json.dumps(p.get("supplier_red_flags") or [], ensure_ascii=False),
             competition_count=int(p.get("alibaba_competition") or 0),
             created_at=datetime.now().isoformat(),
         )
@@ -157,6 +164,28 @@ def inject_globals():
     }
 
 
+@app.template_filter("ago")
+def _filter_ago(iso_dt: Optional[str]) -> str:
+    """ISO-строка → '5 мин назад' / 'сегодня 14:23' / '12.05.2026'."""
+    if not iso_dt:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_dt)
+    except (ValueError, TypeError):
+        return ""
+    now = datetime.now()
+    delta = (now - dt).total_seconds()
+    if delta < 60:
+        return "только что"
+    if delta < 3600:
+        return f"{int(delta // 60)} мин назад"
+    if delta < 86400 and dt.date() == now.date():
+        return f"сегодня {dt.strftime('%H:%M')}"
+    if delta < 172800 and (now.date() - dt.date()).days == 1:
+        return f"вчера {dt.strftime('%H:%M')}"
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+
 # ============ Pages ============
 
 def _dashboard_context(extra: Optional[dict] = None) -> dict:
@@ -168,21 +197,18 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
     demand_timeline = db.get_demand_timeline(limit_niches=5)
     active_run = db.get_active_run()
 
-    total = len(niches)
+    unique_niches = len(niches)
     profitable = len([p for p in top_products if p.get("verdict") == "ВЕЗЁМ"])
-    avg_margin = (
-        sum(p.get("margin_percent", 0) for p in top_products) / len(top_products)
-        if top_products else 0
-    )
+    total_runs = db.count_runs()
 
     ctx = {
         "products": top_products,
         "niches": niches,
         "settings": settings,
         "stats": {
-            "total_niches": total,
+            "unique_niches": unique_niches,
+            "total_runs": total_runs,
             "profitable": profitable,
-            "avg_margin": round(avg_margin, 1),
             "usd_rate": settings.get("usd_rate", 0),
         },
         "demand_timeline": demand_timeline,
@@ -193,6 +219,7 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         # процесса (см. _last_niche_run).
         "generated_products": _last_niche_run["products"],
         "generated_niche": _last_niche_run["niche"],
+        "generated_finished_at": _last_niche_run.get("finished_at", ""),
     }
     if extra:
         ctx.update(extra)
@@ -352,11 +379,26 @@ def run_niche():
             p.setdefault("verdict_reason", "вердикт-агент упал")
             p.setdefault("verdict_source", "arithmetic")
 
+    # Агент 8 — Скоринг поставщика. По данным Alibaba-оффера (рейтинг,
+    # сделки, сертификаты) оценивает надёжность поставщика, выявляет красные
+    # флаги и даёт рекомендации по проверке. Арифметика + LLM поверх.
+    try:
+        products = audit_suppliers(products)
+    except Exception as e:
+        logger.error(f"Agent 8 unexpected error: {e}")
+        for p in products:
+            p.setdefault("supplier_score", 0)
+            p.setdefault("supplier_red_flags", [])
+            p.setdefault("supplier_risk_level", "средний")
+            p.setdefault("supplier_audit_recommendation", "скоринг-агент упал")
+            p.setdefault("supplier_audit_source", "error")
+
     # Запомнили результат в памяти процесса для богатого детального вида
     # сверху (с офферами/разбивкой/обоснованием) — это нужно прямо сейчас,
     # пока пользователь смотрит на страницу.
     _last_niche_run["niche"] = niche
     _last_niche_run["products"] = products
+    _last_niche_run["finished_at"] = datetime.now().isoformat()
 
     # И параллельно сохраняем сжатую версию (одна niche + один лучший оффер)
     # в БД — чтобы результат попал в общий «Топ товаров» внизу и в /history.
