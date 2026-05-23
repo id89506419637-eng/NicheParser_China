@@ -44,7 +44,12 @@ app = Flask(
 app.secret_key = SECRET_KEY
 
 # CSRF-защита всех POST-форм. В шаблонах каждая <form method="POST">
-# обязана содержать <input name="csrf_token" value="{{ csrf_token() }}">.
+# обязана содержать <input name="csrf_token" value="{{ csrf_token() }}".
+# Таймаут 24 часа: иначе оставленная открытой страница «протухает» через час
+# и пользователь видит 400 при нажатии «Найти товары» (по умолчанию у
+# flask_wtf — 3600 сек). В dev-сценарии это раздражает; в проде безопасности
+# никакой не теряем — токен всё ещё нужен и привязан к сессии.
+app.config["WTF_CSRF_TIME_LIMIT"] = 60 * 60 * 24
 csrf = CSRFProtect(app)
 
 # Cookie-флаги: HttpOnly блокирует кражу через document.cookie,
