@@ -582,9 +582,28 @@ def get_runs_grouped(limit_runs: int = 30) -> List[dict]:
         result: List[dict] = []
         for r in runs:
             run_at = r["run_at"]
+            # Для каждого продукта подтаскиваем хронологически предыдущий
+            # прогон ТОЙ ЖЕ ниши — чтобы посчитать дельты маржи/прибыли/спроса.
+            # Это даёт «вот эта ниша в прошлый раз была вот такой».
             rows = conn.execute("""
                 SELECT p.*, n.name_ru AS niche_name_ru, n.niche_type, n.is_seasonal,
-                       n.pain_points
+                       n.pain_points, n.last_frequency,
+                       (SELECT p2.margin_percent FROM products p2
+                          WHERE p2.niche_id = p.niche_id
+                            AND p2.created_at < p.created_at
+                          ORDER BY p2.created_at DESC LIMIT 1) AS prev_margin_percent,
+                       (SELECT p2.margin_total_rub FROM products p2
+                          WHERE p2.niche_id = p.niche_id
+                            AND p2.created_at < p.created_at
+                          ORDER BY p2.created_at DESC LIMIT 1) AS prev_margin_total_rub,
+                       (SELECT p2.avito_price_median FROM products p2
+                          WHERE p2.niche_id = p.niche_id
+                            AND p2.created_at < p.created_at
+                          ORDER BY p2.created_at DESC LIMIT 1) AS prev_avito_price_median,
+                       (SELECT substr(p2.created_at, 1, 16) FROM products p2
+                          WHERE p2.niche_id = p.niche_id
+                            AND p2.created_at < p.created_at
+                          ORDER BY p2.created_at DESC LIMIT 1) AS prev_run_at
                 FROM products p
                 JOIN niches n ON n.id = p.niche_id
                 WHERE substr(p.created_at, 1, 16) = ?

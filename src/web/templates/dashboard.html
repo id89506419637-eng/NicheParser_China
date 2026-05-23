@@ -768,8 +768,28 @@
                                 <span class="margin-badge {% if m >= 70 %}margin--high{% elif m >= 50 %}margin--good{% elif m >= 30 %}margin--mid{% else %}margin--low{% endif %}">
                                     {{ "%.0f"|format(m) }}%
                                 </span>
+                                {% if p.prev_margin_percent is not none %}
+                                    {% set dm = m - p.prev_margin_percent %}
+                                    {% if dm|abs >= 1 %}
+                                        <div style="font-size:10px; margin-top:3px; color:{% if dm > 0 %}#34d399{% else %}#f87171{% endif %};"
+                                             title="В прошлый прогон ({{ p.prev_run_at|ago }}) маржа была {{ '%.0f'|format(p.prev_margin_percent) }}%">
+                                            {% if dm > 0 %}↑{% else %}↓{% endif %} {{ '%+.0f'|format(dm) }}%
+                                        </div>
+                                    {% endif %}
+                                {% endif %}
                             </td>
-                            <td><span style="font-size:13px;">{{ "{:,.0f}".format(p.margin_total_rub or 0).replace(',', ' ') }} ₽</span></td>
+                            <td>
+                                <span style="font-size:13px;">{{ "{:,.0f}".format(p.margin_total_rub or 0).replace(',', ' ') }} ₽</span>
+                                {% if p.prev_margin_total_rub is not none and p.margin_total_rub %}
+                                    {% set dp = p.margin_total_rub - p.prev_margin_total_rub %}
+                                    {% if dp|abs >= 1000 %}
+                                        <div style="font-size:10px; margin-top:3px; color:{% if dp > 0 %}#34d399{% else %}#f87171{% endif %};"
+                                             title="В прошлый прогон было {{ '{:,.0f}'.format(p.prev_margin_total_rub).replace(',', ' ') }} ₽">
+                                            {% if dp > 0 %}↑{% else %}↓{% endif %} {{ '{:+,.0f}'.format(dp).replace(',', ' ') }} ₽
+                                        </div>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}" style="font-size:11px;">
                                     {{ p.verdict or '—' }}
