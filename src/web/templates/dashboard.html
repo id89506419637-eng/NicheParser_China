@@ -634,8 +634,19 @@
                         <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}">
                             {{ p.verdict or '—' }}
                         </span>
+                        {% if p.verdict_reason %}
+                            <div style="font-size:11px; color:#9aa0ab; margin-top:6px; line-height:1.4;"
+                                 title="Обоснование от Агента 7 (LLM) или арифметики, если LLM был недоступен">
+                                {{ p.verdict_reason }}
+                            </div>
+                        {% endif %}
+                        {% if p.verdict_source == 'arithmetic' %}
+                            <div style="font-size:10px; color:#6b7280; margin-top:4px;" title="LLM был недоступен — вердикт выдан по арифметическим порогам">
+                                арифметика
+                            </div>
+                        {% endif %}
                         {% if p.pain_points_list %}
-                            <div class="pain-marker" title="Ниша закрывает боли предпринимателей">💡 боли {{ p.pain_points_list|length }}</div>
+                            <div class="pain-marker" style="margin-top:4px;" title="Ниша закрывает боли предпринимателей">💡 боли {{ p.pain_points_list|length }}</div>
                         {% endif %}
                     </td>
                     <td>
@@ -686,6 +697,108 @@
                 График появится после 4+ запусков анализа. Сейчас данных: {{ all_dates|length }} из 4.
             </div>
         </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 📅 История прогонов — accordion по датам -->
+{% if runs_history %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📅 История прогонов</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Последние {{ runs_history|length }} прогон{% if runs_history|length == 1 %}{% elif runs_history|length < 5 %}а{% else %}ов{% endif %} ·
+            свернуты — кликни на дату чтобы развернуть
+        </span>
+    </div>
+    <div style="padding:8px 16px 16px;">
+        {% for run in runs_history %}
+        <details style="margin-bottom:8px; background:rgba(255,255,255,0.02);
+                        border:1px solid rgba(255,255,255,0.06); border-radius:8px;"
+                 {% if loop.first %}open{% endif %}>
+            <summary style="cursor:pointer; padding:12px 16px; display:flex;
+                            align-items:center; justify-content:space-between;
+                            gap:12px; user-select:none;">
+                <span style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:16px;">🕐</span>
+                    <span style="font-weight:600; color:#e8eaed; font-size:14px;">
+                        {{ run.run_at|ago }}
+                    </span>
+                    <span style="font-size:11px; color:#6b7280;" title="{{ run.run_at }}">
+                        {{ run.run_at|replace('T', ' ') }}
+                    </span>
+                </span>
+                <span style="display:flex; gap:10px; font-size:12px; color:#9aa0ab; align-items:center;">
+                    <span title="Всего товаров в этом прогоне">{{ run.total }} тов.</span>
+                    {% if run.wins > 0 %}
+                        <span class="verdict-badge verdict-везём" style="font-size:11px;">✅ {{ run.wins }} ВЕЗЁМ</span>
+                    {% endif %}
+                    {% if run.niches %}
+                        <span style="color:#6b7280; max-width:240px; overflow:hidden;
+                                     text-overflow:ellipsis; white-space:nowrap;"
+                              title="{{ run.niches|join(', ') }}">
+                            ниши: {{ run.niches|join(', ')|truncate(40) }}
+                        </span>
+                    {% endif %}
+                </span>
+            </summary>
+            <div style="padding:0 16px 12px 16px; overflow-x:auto;">
+                <table class="data-table" style="margin-top:0;">
+                    <thead>
+                        <tr>
+                            <th style="width:30%;">Товар</th>
+                            <th>Маржа</th>
+                            <th>Прибыль/MOQ</th>
+                            <th>Вердикт</th>
+                            <th>Поставщик</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in run.products %}
+                        <tr>
+                            <td>
+                                <div style="font-weight:600; color:#e8eaed; font-size:13px;">{{ p.niche_name_ru or p.title_en }}</div>
+                                {% if p.title_en and p.title_en != p.niche_name_ru %}
+                                    <div style="font-size:11px; color:#6b7280;">{{ p.title_en|truncate(50) }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% set m = p.margin_percent or 0 %}
+                                <span class="margin-badge {% if m >= 70 %}margin--high{% elif m >= 50 %}margin--good{% elif m >= 30 %}margin--mid{% else %}margin--low{% endif %}">
+                                    {{ "%.0f"|format(m) }}%
+                                </span>
+                            </td>
+                            <td><span style="font-size:13px;">{{ "{:,.0f}".format(p.margin_total_rub or 0).replace(',', ' ') }} ₽</span></td>
+                            <td>
+                                <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}" style="font-size:11px;">
+                                    {{ p.verdict or '—' }}
+                                </span>
+                                {% if p.verdict_reason %}
+                                    <div style="font-size:11px; color:#9aa0ab; margin-top:4px; line-height:1.3;">{{ p.verdict_reason|truncate(120) }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.supplier_score and p.supplier_score > 0 %}
+                                    {% set ss = p.supplier_score %}
+                                    <span class="margin-badge {% if ss >= 70 %}margin--good{% elif ss >= 40 %}margin--mid{% else %}margin--low{% endif %}"
+                                          style="font-size:11px;">
+                                        {{ ss }}/100
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted" style="font-size:12px;">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('product_detail', product_id=p.id) }}" class="btn btn-sm btn-ghost">Подробнее</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endfor %}
     </div>
 </div>
 {% endif %}

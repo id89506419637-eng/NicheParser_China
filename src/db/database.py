@@ -557,3 +557,53 @@ def count_runs() -> int:
             "SELECT COUNT(DISTINCT substr(created_at, 1, 16)) AS n FROM products"
         ).fetchone()
         return int(row["n"] or 0)
+
+
+def get_runs_grouped(limit_runs: int = 30) -> List[dict]:
+    """
+    Группирует продукты по «прогонам» (уникальные минуты в created_at) и
+    возвращает последние limit_runs прогонов с их товарами.
+
+    Возвращает: [{run_at: '2026-05-23T14:23', products: [...], wins: 2,
+                  total: 5, niches: [...]}, ...] от свежего к старому.
+    """
+    with get_connection() as conn:
+        # последние N прогонов
+        runs = conn.execute("""
+            SELECT substr(created_at, 1, 16) AS run_at,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN verdict = 'ВЕЗЁМ' THEN 1 ELSE 0 END) AS wins
+            FROM products
+            GROUP BY substr(created_at, 1, 16)
+            ORDER BY run_at DESC
+            LIMIT ?
+        """, (limit_runs,)).fetchall()
+
+        result: List[dict] = []
+        for r in runs:
+            run_at = r["run_at"]
+            rows = conn.execute("""
+                SELECT p.*, n.name_ru AS niche_name_ru, n.niche_type, n.is_seasonal,
+                       n.pain_points
+                FROM products p
+                JOIN niches n ON n.id = p.niche_id
+                WHERE substr(p.created_at, 1, 16) = ?
+                ORDER BY p.margin_percent DESC
+            """, (run_at,)).fetchall()
+            products = []
+            for prow in rows:
+                d = dict(prow)
+                d["is_seasonal"] = bool(d.get("is_seasonal", 0))
+                try:
+                    d["pain_points_list"] = json.loads(d.get("pain_points") or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    d["pain_points_list"] = []
+                products.append(_hydrate_product_row(d))
+            result.append({
+                "run_at": run_at,
+                "total": int(r["total"] or 0),
+                "wins": int(r["wins"] or 0),
+                "products": products,
+                "niches": sorted({p["niche_name_ru"] for p in products if p.get("niche_name_ru")}),
+            })
+        return result

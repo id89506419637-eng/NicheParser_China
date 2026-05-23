@@ -200,6 +200,7 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
     unique_niches = len(niches)
     profitable = len([p for p in top_products if p.get("verdict") == "ВЕЗЁМ"])
     total_runs = db.count_runs()
+    runs_history = db.get_runs_grouped(limit_runs=30)
 
     ctx = {
         "products": top_products,
@@ -212,6 +213,7 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
             "usd_rate": settings.get("usd_rate", 0),
         },
         "demand_timeline": demand_timeline,
+        "runs_history": runs_history,
         "filters": filters,
         "active_run": active_run,
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
