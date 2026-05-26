@@ -32,5 +32,6 @@ Thumbs.db
 # Data / logs
 data/*.db
 data/*.db-journal
+data/*.db.backup-*
 logs/
 *.log

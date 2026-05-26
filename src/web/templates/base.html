@@ -64,6 +64,35 @@
                 </div>
             {% endif %}
         {% endwith %}
+
+        {# 🧪 Mock-режим: крупная плашка сверху, видна на всех страницах.
+           Показываем только если хотя бы один источник работает на синтетике. #}
+        {% set mock_sources = [] %}
+        {% if features.wordstat_mock %}{% set _ = mock_sources.append('Wordstat') %}{% endif %}
+        {% if features.alibaba_mock %}{% set _ = mock_sources.append('Alibaba') %}{% endif %}
+        {% if features.avito_mock %}{% set _ = mock_sources.append('Авито') %}{% endif %}
+        {% if mock_sources %}
+        <div style="margin:0 0 20px 0; padding:14px 20px;
+                    background:linear-gradient(90deg, rgba(251,191,36,0.12), rgba(251,191,36,0.05));
+                    border:1px solid rgba(251,191,36,0.4); border-left:4px solid #fbbf24;
+                    border-radius:8px; color:#fbbf24; font-size:13px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span style="font-size:22px;">🧪</span>
+                <div style="flex:1;">
+                    <div style="font-weight:700; color:#fbbf24; font-size:14px; margin-bottom:2px;">
+                        Режим демонстрации — данные синтетические
+                    </div>
+                    <div style="color:#d4af37; line-height:1.5;">
+                        Источники в mock-режиме: <strong>{{ mock_sources|join(', ') }}</strong>.
+                        Цены, спрос и число объявлений выдуманы кодом для отладки интерфейса.
+                        <span style="color:#f87171;">Бизнес-решения на этих цифрах принимать нельзя.</span>
+                        Реальные API подключим в Wave 6.
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% block content %}{% endblock %}
     </main>
 

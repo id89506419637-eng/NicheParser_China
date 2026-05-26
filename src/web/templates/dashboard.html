@@ -288,8 +288,17 @@
                                     MOQ от {{ p.alibaba_min_moq or '—' }} · {{ p.alibaba_offers|length }} офферов
                                 </span>
                             </div>
+                            {% set best_alibaba = p.alibaba_offers[0] %}
+                            {% if best_alibaba.product_url %}
+                                <a href="{{ best_alibaba.product_url }}" target="_blank" rel="noopener"
+                                   style="display:inline-block; margin-top:6px; font-size:11px;
+                                          color:#a5b4fc; text-decoration:underline;"
+                                   title="Открыть лучший оффер на Alibaba в новой вкладке для ручной проверки">
+                                    🔗 проверить на Alibaba →
+                                </a>
+                            {% endif %}
                             <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать офферы</summary>
+                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать все офферы</summary>
                                 <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab;">
                                     {% for o in p.alibaba_offers %}
                                     <li style="margin-bottom:4px; line-height:1.4;">
@@ -324,9 +333,18 @@
                                     {{ p.avito_listings_count or 0 }} объявл.
                                 </span>
                             </div>
+                            {% set first_avito = (p.avito_offers or [])[0] %}
+                            {% if first_avito and first_avito.url %}
+                                <a href="{{ first_avito.url }}" target="_blank" rel="noopener"
+                                   style="display:inline-block; margin-top:6px; font-size:11px;
+                                          color:#a5b4fc; text-decoration:underline;"
+                                   title="Открыть первое объявление на Авито в новой вкладке для ручной проверки">
+                                    🔗 проверить на Авито →
+                                </a>
+                            {% endif %}
                             {% if p.avito_offers %}
                             <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать объявления</summary>
+                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать все объявления</summary>
                                 <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab;">
                                     {% for o in p.avito_offers %}
                                     <li style="margin-bottom:4px; line-height:1.4;">
@@ -589,6 +607,15 @@
                             <div style="font-size:11px; color:#9aa0ab; margin-top:2px;"
                                  title="Когда этот товар был промониторен агентами. Если давно — стоит перезапустить, цены могли измениться.">
                                 🕐 {{ p.created_at|ago }}
+                            </div>
+                        {% endif %}
+                        {% if p.product_url %}
+                            <div style="margin-top:4px;">
+                                <a href="{{ p.product_url }}" target="_blank" rel="noopener"
+                                   style="font-size:11px; color:#a5b4fc; text-decoration:underline;"
+                                   title="Открыть оффер на Alibaba в новой вкладке для ручной проверки">
+                                    🔗 проверить на Alibaba →
+                                </a>
                             </div>
                         {% endif %}
                         <div class="niche-category" style="margin-top:4px;">

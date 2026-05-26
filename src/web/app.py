@@ -18,7 +18,8 @@ from flask_wtf.csrf import CSRFProtect
 
 from core.config import (
     SECRET_KEY, TARGET_CATEGORIES, NICHE_TYPES, VERDICTS,
-    ENABLE_AVITO, ENABLE_WORDSTAT, ENABLE_ALIBABA, USE_MOCK_WORDSTAT,
+    ENABLE_AVITO, ENABLE_WORDSTAT, ENABLE_ALIBABA,
+    USE_MOCK_WORDSTAT, USE_MOCK_ALIBABA, USE_MOCK_AVITO,
     FLASK_DEBUG,
 )
 from src.db import database as db
@@ -164,7 +165,9 @@ def inject_globals():
             "wordstat": ENABLE_WORDSTAT,
             "wordstat_mock": USE_MOCK_WORDSTAT,
             "alibaba": ENABLE_ALIBABA,
+            "alibaba_mock": USE_MOCK_ALIBABA,
             "avito": ENABLE_AVITO,
+            "avito_mock": USE_MOCK_AVITO,
         },
     }
 
