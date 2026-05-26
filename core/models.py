@@ -127,6 +127,12 @@ class Hypothesis:
     china_solution: str = ""         # «Аппараты Wagner-клонов от $800»
     why_free: str = ""               # «В РФ только европейские, $5000+»
     llm_confidence: str = ""         # «высокая» / «средняя» / «низкая»
+    # Agent 0B (Critic) — Wave 5B
+    critic_score: int = -1           # 0-5, чем выше тем меньше серьёзных контраргументов; -1 = не проверено
+    critic_reasons: str = ""         # JSON-массив строк с конкретными контраргументами
+    # Wave 5C — 7-факторный скоринг
+    score_total: int = -1            # 0-100, итоговый балл; -1 = не считано
+    score_breakdown: str = ""        # JSON: {demand, china, avito, economy, demo, ops, critic, validation_data}
     created_at: str = ""
 
 

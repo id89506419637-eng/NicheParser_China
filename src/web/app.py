@@ -33,6 +33,8 @@ from src.pipeline.agents.ved_runner import run_ved
 from src.pipeline.agents.verdict_agent import issue_verdicts
 from src.pipeline.agents.supplier_audit import audit_suppliers
 from src.pipeline.agents.industry_explorer import explore_industry, INDUSTRIES
+from src.pipeline.agents.hypothesis_critic import critique_hypotheses
+from src.pipeline.agents.hypothesis_scorer import validate_and_score, recompute_with_dr
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
 
@@ -230,6 +232,8 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
             {"key": k, "label": v["label"]} for k, v in INDUSTRIES.items()
         ],
         "industry_run": _last_industry_run,
+        # Wave 5E — список вопросов для DR-чеклиста (rendered в шаблоне)
+        "dr_questions": db.DR_QUESTIONS,
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
         # пропадали при следующих переходах/запросах. Хранится в памяти
         # процесса (см. _last_niche_run).
@@ -306,6 +310,103 @@ def settings_page():
 
 # ============ Actions ============
 
+def _run_full_pipeline(niche: str) -> Optional[str]:
+    """
+    Прогнать строку ниши через все 8 агентов. Обновляет _last_niche_run и
+    сохраняет в БД. Возвращает None при успехе или строку с ошибкой при провале.
+    Вызывается из /run-niche (юзер ввёл строку) и /take-hypothesis/<id>
+    (юзер выбрал гипотезу из Agent 0A).
+    """
+    try:
+        products = generate_products(niche)
+    except Exception as e:
+        logger.error(f"Agent 1 unexpected error: {type(e).__name__}: {e}")
+        return "Не удалось сгенерировать товары — проверь логи"
+
+    if not products:
+        return (
+            "AI не вернул товары. Возможные причины: пустой OPENROUTER_API_KEY, "
+            "лимит free-модели или неожиданный формат ответа. Смотри logs/."
+        )
+
+    _run_agents_2_to_8(products)
+
+    _last_niche_run["niche"] = niche
+    _last_niche_run["products"] = products
+    _last_niche_run["finished_at"] = datetime.now().isoformat()
+
+    try:
+        saved = _persist_run(products)
+        if saved:
+            logger.info(f"pipeline: '{niche}' — сохранено {saved} ниш в БД")
+    except Exception as e:
+        logger.error(f"_persist_run failed for '{niche}': {type(e).__name__}: {e}")
+
+    return None
+
+
+def _run_agents_2_to_8(products: list) -> None:
+    """Прогон Агентов 2-8 по уже сгенерированному списку товаров (мутирует)."""
+    try:
+        check_demand(products)
+    except Exception as e:
+        logger.error(f"Agent 2 unexpected error: {e}")
+        for p in products:
+            p.setdefault("frequency", 0)
+
+    try:
+        filter_niches(products)
+    except Exception as e:
+        logger.error(f"Agent 3 unexpected error: {e}")
+        for p in products:
+            p.setdefault("keep", True)
+            p.setdefault("filter_reason", "фильтр упал")
+
+    try:
+        find_on_alibaba(products, top_per_query=5)
+    except Exception as e:
+        logger.error(f"Agent 4 unexpected error: {e}")
+        for p in products:
+            p.setdefault("alibaba_offers", [])
+            p.setdefault("alibaba_min_usd", 0.0)
+            p.setdefault("alibaba_min_moq", 0)
+
+    try:
+        find_on_avito(products, top_per_query=10)
+    except Exception as e:
+        logger.error(f"Agent 6 unexpected error: {e}")
+        for p in products:
+            p.setdefault("avito_offers", [])
+            p.setdefault("avito_price_rub_median", 0.0)
+            p.setdefault("avito_listings_count", 0)
+
+    try:
+        run_ved(products)
+    except Exception as e:
+        logger.error(f"Agent 5 unexpected error: {e}")
+
+    try:
+        issue_verdicts(products)
+    except Exception as e:
+        logger.error(f"Agent 7 unexpected error: {e}")
+        for p in products:
+            p.setdefault("verdict", "ИЗУЧИТЬ")
+            p.setdefault("verdict_reason", "вердикт-агент упал")
+            p.setdefault("verdict_source", "arithmetic")
+
+    # ВАЖНО: Agent 8 (supplier audit) НЕ запускается в общем пайплайне.
+    # Правильная цепочка: гипотеза → ниша → выбор конкретного товара → ТОЛЬКО
+    # ТОГДА аудит поставщика. Иначе система делает дорогую LLM-работу по
+    # поставщикам для товаров, которые юзер ещё не решила везти.
+    # Триггер аудита — кнопка «Найти поставщиков» на /product/<id>.
+    for p in products:
+        p.setdefault("supplier_score", 0)
+        p.setdefault("supplier_red_flags", [])
+        p.setdefault("supplier_risk_level", "")
+        p.setdefault("supplier_audit_recommendation", "")
+        p.setdefault("supplier_audit_source", "")
+
+
 @app.route("/run-niche", methods=["POST"])
 def run_niche():
     """Агент 1: по нише от пользователя получить 5–10 B2B-товаров через LLM."""
@@ -318,114 +419,78 @@ def run_niche():
         flash("Слишком длинная ниша — сократи до 80 символов", "warning")
         return redirect(url_for("dashboard"))
 
-    try:
-        products = generate_products(niche)
-    except Exception as e:
-        logger.error(f"Agent 1 unexpected error: {type(e).__name__}: {e}")
-        flash("Не удалось сгенерировать товары — проверь логи", "error")
+    err = _run_full_pipeline(niche)
+    if err:
+        flash(err, "error")
         return redirect(url_for("dashboard"))
 
-    if not products:
-        flash(
-            "AI не вернул товары. Возможные причины: пустой OPENROUTER_API_KEY, "
-            "лимит free-модели или неожиданный формат ответа. Смотри logs/.",
-            "error",
-        )
+    return render_template("dashboard.html", **_dashboard_context())
+
+
+@app.route("/take-hypothesis/<int:hyp_id>", methods=["POST"])
+def take_hypothesis(hyp_id: int):
+    """
+    Wave 5D — пользователь выбрал гипотезу из Agent 0A и хочет полный анализ.
+    Берём niche_name гипотезы и прогоняем через тот же 8-агентный пайплайн,
+    что и /run-niche.
+    """
+    h = db.get_hypothesis_by_id(hyp_id)
+    if not h:
+        flash("Гипотеза не найдена — возможно удалена", "error")
         return redirect(url_for("dashboard"))
 
-    # Агент 2 — обогащаем частотностью из Wordstat (mock, пока нет YANDEX_OAUTH_TOKEN).
-    # Не отсеивает; просто добавляет каждой записи поле 'frequency'.
-    try:
-        products = check_demand(products)
-    except Exception as e:
-        logger.error(f"Agent 2 unexpected error: {e}")
-        # Не валим страницу — просто покажем без частотности
-        for p in products:
-            p.setdefault("frequency", 0)
+    niche = h["niche_name"]
+    logger.info(f"/take-hypothesis: {hyp_id} → '{niche}' (industry={h['industry']})")
+    err = _run_full_pipeline(niche)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("dashboard"))
 
-    # Агент 3 — LLM-фильтр перегретого ритейла. Не выкидывает из списка,
-    # размечает каждый продукт keep=True/False + filter_reason.
-    try:
-        products = filter_niches(products)
-    except Exception as e:
-        logger.error(f"Agent 3 unexpected error: {e}")
-        for p in products:
-            p.setdefault("keep", True)
-            p.setdefault("filter_reason", "фильтр упал")
+    flash(f"Гипотеза «{niche}» взята в работу — прогнан полный пайплайн", "success")
+    return render_template("dashboard.html", **_dashboard_context())
 
-    # Агент 4 — Alibaba. Только для keep=True. В mock-режиме быстро,
-    # в реале — 5–15с на товар.
-    try:
-        products = find_on_alibaba(products, top_per_query=5)
-    except Exception as e:
-        logger.error(f"Agent 4 unexpected error: {e}")
-        for p in products:
-            p.setdefault("alibaba_offers", [])
-            p.setdefault("alibaba_min_usd", 0.0)
-            p.setdefault("alibaba_min_moq", 0)
 
-    # Агент 6 — Avito. Тянем медианную цену продажи в РФ для замены
-    # эвристики ×2.5 в ВЭД-расчёте. Идёт ДО Агента 5, чтобы тот мог
-    # использовать реальный price_rf_rub. В mock-режиме мгновенно.
-    try:
-        products = find_on_avito(products, top_per_query=10)
-    except Exception as e:
-        logger.error(f"Agent 6 unexpected error: {e}")
-        for p in products:
-            p.setdefault("avito_offers", [])
-            p.setdefault("avito_price_rub_median", 0.0)
-            p.setdefault("avito_listings_count", 0)
+@app.route("/save-deal-readiness/<int:hyp_id>", methods=["POST"])
+def save_deal_readiness_route(hyp_id: int):
+    """
+    Wave 5E — пользователь заполнил/изменил DR-чеклист по 7 вопросам.
+    Сохраняем в БД, пересчитываем factors.demo и factors.ops + score_total,
+    обновляем гипотезу в БД и в памяти (для немедленного показа на дашборде).
+    """
+    h = db.get_hypothesis_by_id(hyp_id)
+    if not h:
+        flash("Гипотеза не найдена", "error")
+        return redirect(url_for("dashboard"))
 
-    # Агент 5 — ВЭД-расчёт. Берёт лучший оффер Alibaba + медиану Авито
-    # и считает себестоимость и маржу. Если Авито пуст — fallback на эвристику.
-    try:
-        products = run_ved(products)
-    except Exception as e:
-        logger.error(f"Agent 5 unexpected error: {e}")
+    answers = {key: 1 if request.form.get(key) else 0 for key, _ in db.DR_QUESTIONS}
+    notes = (request.form.get("dr_notes") or "").strip()[:1000]
 
-    # Агент 7 — LLM-вердикт. По полному пакету данных каждому товару
-    # присваивается ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM
-    # упал — fallback на арифметику по тем же порогам.
-    try:
-        products = issue_verdicts(products)
-    except Exception as e:
-        logger.error(f"Agent 7 unexpected error: {e}")
-        for p in products:
-            p.setdefault("verdict", "ИЗУЧИТЬ")
-            p.setdefault("verdict_reason", "вердикт-агент упал")
-            p.setdefault("verdict_source", "arithmetic")
+    db.save_deal_readiness(hyp_id, answers, notes)
 
-    # Агент 8 — Скоринг поставщика. По данным Alibaba-оффера (рейтинг,
-    # сделки, сертификаты) оценивает надёжность поставщика, выявляет красные
-    # флаги и даёт рекомендации по проверке. Арифметика + LLM поверх.
-    try:
-        products = audit_suppliers(products)
-    except Exception as e:
-        logger.error(f"Agent 8 unexpected error: {e}")
-        for p in products:
-            p.setdefault("supplier_score", 0)
-            p.setdefault("supplier_red_flags", [])
-            p.setdefault("supplier_risk_level", "средний")
-            p.setdefault("supplier_audit_recommendation", "скоринг-агент упал")
-            p.setdefault("supplier_audit_source", "error")
+    # Пересчёт скоринга: берём текущий breakdown из БД и накладываем DR
+    breakdown = h.get("score_breakdown_dict") or {}
+    if breakdown.get("factors"):
+        new_breakdown = recompute_with_dr(breakdown, int(h.get("critic_score", -1)), answers)
+        db.update_hypothesis_score(hyp_id, int(new_breakdown["total"]), new_breakdown)
+    else:
+        new_breakdown = breakdown
 
-    # Запомнили результат в памяти процесса для богатого детального вида
-    # сверху (с офферами/разбивкой/обоснованием) — это нужно прямо сейчас,
-    # пока пользователь смотрит на страницу.
-    _last_niche_run["niche"] = niche
-    _last_niche_run["products"] = products
-    _last_niche_run["finished_at"] = datetime.now().isoformat()
+    # Обновляем in-memory представление: меняем deal_readiness + score + сортируем
+    yes_count = sum(answers.values())
+    updated_dr = dict(answers)
+    updated_dr.update({"notes": notes, "yes_count": yes_count})
+    for item in _last_industry_run.get("hypotheses", []):
+        if item.get("id") == hyp_id:
+            item["deal_readiness"] = updated_dr
+            if new_breakdown:
+                item["score_total"] = int(new_breakdown.get("total", item.get("score_total", -1)))
+                item["score_breakdown"] = new_breakdown
+            break
+    _last_industry_run.get("hypotheses", []).sort(
+        key=lambda x: -(x.get("score_total") or -1)
+    )
 
-    # И параллельно сохраняем сжатую версию (одна niche + один лучший оффер)
-    # в БД — чтобы результат попал в общий «Топ товаров» внизу и в /history.
-    # Падение сохранения не должно ломать показ страницы.
-    try:
-        saved = _persist_run(products)
-        if saved:
-            logger.info(f"/run-niche: '{niche}' — сохранено {saved} ниш в БД")
-    except Exception as e:
-        logger.error(f"_persist_run failed for '{niche}': {type(e).__name__}: {e}")
-
+    flash(f"Deal Readiness сохранён: {yes_count}/7. Скоринг обновлён.", "success")
     return render_template("dashboard.html", **_dashboard_context())
 
 
@@ -453,9 +518,22 @@ def explore_industry_route():
         flash("Agent 0A не смог сгенерировать гипотезы (проверь OPENROUTER_API_KEY и интернет)", "error")
         return redirect(url_for("dashboard"))
 
-    # Сохраняем в БД — для истории и для будущих волн (Critic, Scoring)
+    # Agent 0B: критика гипотез (обязательно по плану v3). Мутирует объекты на месте.
     try:
-        db.save_hypotheses(hypotheses)
+        critique_hypotheses(hypotheses)
+    except Exception as e:
+        logger.error(f"Agent 0B failed: {type(e).__name__}: {e}")
+
+    # Wave 5C — валидация + 7-факторный скоринг. Мутирует + сортирует по баллу.
+    try:
+        validate_and_score(hypotheses)
+    except Exception as e:
+        logger.error(f"validate_and_score failed: {type(e).__name__}: {e}")
+
+    # Сохраняем в БД (с critic + score полями) и забираем присвоенные id
+    hyp_ids = []
+    try:
+        hyp_ids = db.save_hypotheses(hypotheses)
     except Exception as e:
         logger.error(f"save_hypotheses failed: {type(e).__name__}: {e}")
 
@@ -464,16 +542,22 @@ def explore_industry_route():
     _last_industry_run["industry_label"] = INDUSTRIES[industry_key]["label"]
     _last_industry_run["hypotheses"] = [
         {
+            "id": hyp_ids[i] if i < len(hyp_ids) else None,
             "niche_name": h.niche_name, "pain": h.pain,
             "china_solution": h.china_solution, "why_free": h.why_free,
             "llm_confidence": h.llm_confidence,
+            "critic_score": h.critic_score,
+            "critic_reasons": json.loads(h.critic_reasons or "[]"),
+            "score_total": h.score_total,
+            "score_breakdown": json.loads(h.score_breakdown or "{}"),
+            "deal_readiness": None,  # ещё не заполнен пользователем
         }
-        for h in hypotheses
+        for i, h in enumerate(hypotheses)
     ]
     _last_industry_run["batch_id"] = batch_id
     _last_industry_run["finished_at"] = datetime.now().isoformat()
 
-    flash(f"Agent 0A: сгенерировано {len(hypotheses)} гипотез по «{INDUSTRIES[industry_key]['label']}»", "success")
+    flash(f"Agent 0A+0B+скоринг: {len(hypotheses)} гипотез по «{INDUSTRIES[industry_key]['label']}»", "success")
     return render_template("dashboard.html", **_dashboard_context())
 
 
@@ -551,6 +635,69 @@ def delete_product(product_id: int):
     db.delete_product(product_id)
     flash("Товар удалён", "success")
     return redirect(url_for("dashboard"))
+
+
+@app.route("/product/<int:product_id>/audit-suppliers", methods=["POST"])
+def audit_suppliers_route(product_id: int):
+    """
+    Ручной триггер Agent 8 для одного выбранного товара (Wave 5D gate).
+    Запускается ТОЛЬКО по кнопке на /product/<id> — никогда автоматически,
+    чтобы не упахивать LLM на товарах, которые юзер не решила везти.
+    """
+    product = db.get_product_by_id(product_id)
+    if not product:
+        abort(404)
+
+    # Собираем псевдо-оффер из полей сохранённого Product — Agent 8 ждёт
+    # формат словарей пайплайна: список товаров, у каждого alibaba_offers
+    # и ved_best_offer.url для выбора нужного оффера.
+    certs_list = []
+    raw_certs = product.get("certificates") or ""
+    if raw_certs:
+        certs_list = [c.strip() for c in raw_certs.split(",") if c.strip()]
+
+    offer = {
+        "title_en": product.get("title_en") or "",
+        "price_usd_min": float(product.get("price_usd_min") or 0),
+        "price_usd_max": float(product.get("price_usd_max") or 0),
+        "moq": int(product.get("moq") or 0),
+        "supplier_rating": float(product.get("supplier_rating") or 0),
+        "deals_count": int(product.get("deals_count") or 0),
+        "certificates": certs_list,
+        "weight_kg": float(product.get("weight_kg") or 0),
+        "product_url": product.get("product_url") or "",
+    }
+    pseudo = [{
+        "title_en": product.get("title_en") or "",
+        "title_ru": product.get("niche_name_ru") or "",
+        "keep": True,
+        "alibaba_offers": [offer],
+        "ved_best_offer": {"url": offer["product_url"]},
+        "verdict": product.get("verdict") or "",
+        "frequency": int(product.get("last_frequency") or 0),
+    }]
+
+    try:
+        audit_suppliers(pseudo)
+    except Exception as e:
+        logger.error(f"Agent 8 (manual) failed for product {product_id}: {type(e).__name__}: {e}")
+        flash("Аудит поставщика упал — проверь логи", "error")
+        return redirect(url_for("product_detail", product_id=product_id))
+
+    p = pseudo[0]
+    db.update_supplier_audit(
+        product_id,
+        score=int(p.get("supplier_score") or 0),
+        risk_level=p.get("supplier_risk_level") or "",
+        recommendation=p.get("supplier_audit_recommendation") or "",
+        source=p.get("supplier_audit_source") or "",
+        red_flags=p.get("supplier_red_flags") or [],
+    )
+    flash(
+        f"Аудит поставщика: {p.get('supplier_score', 0)}/100, риск «{p.get('supplier_risk_level', '—')}»",
+        "success",
+    )
+    return redirect(url_for("product_detail", product_id=product_id))
 
 
 # ============ JSON API ============

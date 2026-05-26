@@ -140,55 +140,194 @@
     </div>
 </div>
 
-<!-- Результаты Agent 0A -->
+<!-- Результаты Agent 0A+0B+скоринг -->
 {% if industry_run.hypotheses %}
+{% macro hypothesis_card(h, idx, batch_id='') %}
+    {# Цвет рамки слева по итоговому баллу: 70+ зелёный, 50-69 жёлтый, <50 серый #}
+    {% set score = h.score_total if h.score_total is defined else -1 %}
+    {% if score >= 70 %}
+        {% set border_color = '#34d399' %}{% set badge_bg = 'rgba(52,211,153,0.15)' %}{% set badge_fg = '#34d399' %}{% set verdict = 'в работу' %}
+    {% elif score >= 50 %}
+        {% set border_color = '#fbbf24' %}{% set badge_bg = 'rgba(251,191,36,0.15)' %}{% set badge_fg = '#fbbf24' %}{% set verdict = 'проверить' %}
+    {% else %}
+        {% set border_color = '#6b7280' %}{% set badge_bg = 'rgba(107,114,128,0.2)' %}{% set badge_fg = '#9aa0ab' %}{% set verdict = 'отброс' %}
+    {% endif %}
+    <div style="margin-bottom:10px; padding:12px 16px;
+                background:rgba(255,255,255,0.02);
+                border:1px solid rgba(255,255,255,0.06);
+                border-left:4px solid {{ border_color }};
+                border-radius:6px;">
+        <div style="display:flex; justify-content:space-between; gap:14px; align-items:flex-start;">
+            <div style="font-weight:700; color:#e8eaed; font-size:14px; flex:1;">
+                {{ idx }}. {{ h.niche_name }}
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                {% if score >= 0 %}
+                <span style="font-size:13px; font-weight:700; padding:3px 10px; border-radius:6px;
+                             background:{{ badge_bg }}; color:{{ badge_fg }};"
+                      title="Итоговый балл по 7-факторной модели (0-100). Порог в работу: 70+, проверить: 50-69, отброс: <50">
+                    {{ score }}/100
+                </span>
+                <span style="font-size:10px; color:{{ badge_fg }}; text-transform:uppercase;">{{ verdict }}</span>
+                {% endif %}
+                <span style="font-size:11px; padding:2px 8px; border-radius:4px;
+                             {% if h.llm_confidence == 'высокая' %}background:rgba(52,211,153,0.1); color:#34d399;
+                             {% elif h.llm_confidence == 'средняя' %}background:rgba(251,191,36,0.1); color:#fbbf24;
+                             {% else %}background:rgba(107,114,128,0.15); color:#9aa0ab;{% endif %}"
+                      title="Уверенность Agent 0A в гипотезе">
+                    LLM: {{ h.llm_confidence }}
+                </span>
+            </div>
+        </div>
+
+        {% if h.pain %}<div style="font-size:12px; color:#9aa0ab; margin-top:6px; line-height:1.5;"><span style="color:#6b7280;">🩹 Боль:</span> {{ h.pain }}</div>{% endif %}
+        {% if h.china_solution %}<div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;"><span style="color:#6b7280;">🇨🇳 Китай:</span> {{ h.china_solution }}</div>{% endif %}
+        {% if h.why_free %}<div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;"><span style="color:#6b7280;">🇷🇺 Почему свободно:</span> {{ h.why_free }}</div>{% endif %}
+
+        {# Разложение скоринга по 7 факторам #}
+        {% if h.score_breakdown and h.score_breakdown.factors %}
+        <div style="margin-top:10px; padding:10px 12px; background:rgba(0,0,0,0.18); border-radius:5px;">
+            <div style="font-size:11px; color:#6b7280; margin-bottom:6px;">Скоринг 7 факторов:</div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 12px;">
+                {% set names = {'economy': '💰 Экономика', 'demand': '🔍 Спрос Яндекс', 'china': '🇨🇳 Китай', 'avito': '🇷🇺 Конк. Авито', 'demo': '📹 Демо', 'ops': '🔧 Опер.', 'critic': '🛑 Критик'} %}
+                {% for key, info in h.score_breakdown.factors.items() %}
+                <div style="font-size:11px; color:#9aa0ab;">
+                    <strong style="color:#e8eaed;">{{ names[key] }}:</strong>
+                    <span style="color:{% if info.score == info.max %}#34d399{% elif info.score >= info.max // 2 %}#fbbf24{% else %}#6b7280{% endif %};">{{ info.score }}/{{ info.max }}</span>
+                    <span style="color:#6b7280;">— {{ info.value }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# Критика Agent 0B #}
+        {% if h.critic_reasons %}
+        <div style="margin-top:8px; padding:8px 12px; background:rgba(248,113,113,0.08); border-left:2px solid rgba(248,113,113,0.4); border-radius:3px;">
+            <div style="font-size:11px; color:#f87171; margin-bottom:4px;">
+                🛑 Critic ({{ h.critic_score if h.critic_score >= 0 else '—' }}/5): {{ h.critic_reasons|length }} контраргумент{{ 'ов' if h.critic_reasons|length >= 5 else ('а' if h.critic_reasons|length >= 2 else '') }}
+            </div>
+            <ul style="margin:0; padding-left:18px; font-size:11px; color:#fca5a5; line-height:1.5;">
+                {% for r in h.critic_reasons %}<li>{{ r }}</li>{% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {# Deal Readiness Check (Wave 5E) — 7 вопросов, ручной фильтр перед
+           тем как ниша уйдёт в полный анализ. Заполненные ответы влияют на
+           factors.demo и factors.ops в скоринге. #}
+        {% if h.id and dr_questions %}
+        {% set dr = h.deal_readiness %}
+        {% set yes = dr.yes_count if dr else 0 %}
+        {% if dr %}
+            {% if yes >= 5 %}{% set dr_color = '#34d399' %}{% set dr_bg = 'rgba(52,211,153,0.08)' %}
+            {% elif yes >= 1 %}{% set dr_color = '#fbbf24' %}{% set dr_bg = 'rgba(251,191,36,0.08)' %}
+            {% else %}{% set dr_color = '#f87171' %}{% set dr_bg = 'rgba(248,113,113,0.08)' %}{% endif %}
+        {% else %}
+            {% set dr_color = '#6b7280' %}{% set dr_bg = 'rgba(107,114,128,0.06)' %}
+        {% endif %}
+        <details style="margin-top:10px;">
+            <summary style="cursor:pointer; padding:6px 12px; background:{{ dr_bg }};
+                            border-left:2px solid {{ dr_color }}; border-radius:3px;
+                            color:{{ dr_color }}; font-size:11px; font-weight:600;">
+                📋 Deal Readiness: {% if dr %}{{ yes }}/7 ответов «да»{% else %}не заполнено — кликни, чтобы проверить готовность сделки{% endif %}
+                {% if dr and yes < 5 %}<span style="color:#f87171; margin-left:6px;">⚠ ниже порога 5/7</span>{% endif %}
+            </summary>
+            <form method="POST" action="{{ url_for('save_deal_readiness_route', hyp_id=h.id) }}"
+                  style="margin-top:8px; padding:10px 12px; background:rgba(0,0,0,0.18); border-radius:5px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="font-size:11px; color:#6b7280; margin-bottom:8px;">
+                    Отметь только то, что точно «да». Q1 → 12 баллов «Демо», Q2+Q4+Q5 → до 10 баллов «Опер.»
+                </div>
+                {% for key, label in dr_questions %}
+                <label style="display:flex; gap:8px; padding:5px 0; align-items:flex-start; cursor:pointer; font-size:12px; color:#cbd5e1;">
+                    <input type="checkbox" name="{{ key }}" value="1"
+                           {% if dr and dr.get(key) %}checked{% endif %}
+                           style="margin-top:2px; accent-color:#34d399;">
+                    <span><strong style="color:#9aa0ab;">Q{{ loop.index }}.</strong> {{ label }}</span>
+                </label>
+                {% endfor %}
+                <textarea name="dr_notes" rows="2" maxlength="1000"
+                          placeholder="Почему берём несмотря на риски / комментарий (опционально)"
+                          style="width:100%; margin-top:8px; padding:6px 8px;
+                                 background:rgba(255,255,255,0.04);
+                                 border:1px solid rgba(255,255,255,0.1);
+                                 border-radius:4px; color:#e8eaed; font-size:11px;
+                                 font-family:inherit; resize:vertical;">{% if dr %}{{ dr.get('notes', '') }}{% endif %}</textarea>
+                <button type="submit"
+                        style="margin-top:8px; padding:5px 12px; border-radius:4px;
+                               background:rgba(52,211,153,0.15); color:#34d399;
+                               border:1px solid rgba(52,211,153,0.4);
+                               cursor:pointer; font-size:11px; font-weight:600;">
+                    💾 Сохранить Deal Readiness
+                </button>
+            </form>
+        </details>
+        {% endif %}
+
+        {# Кнопка «Взять в работу» — запускает полный 8-агентный пайплайн.
+           Показываем только если есть id (гипотеза реально сохранена в БД). #}
+        {% if h.id %}
+        <form method="POST" action="{{ url_for('take_hypothesis', hyp_id=h.id) }}"
+              style="margin-top:10px; display:inline-block;"
+              onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Запускаю пайплайн...';">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm"
+                    style="background:{% if score >= 70 %}rgba(52,211,153,0.15); color:#34d399; border:1px solid rgba(52,211,153,0.4)
+                           {% elif score >= 50 %}rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.4)
+                           {% else %}rgba(107,114,128,0.15); color:#9aa0ab; border:1px solid rgba(107,114,128,0.3){% endif %};
+                           padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"
+                    title="Прогнать через 8-агентный пайплайн: Wordstat, Alibaba, Avito, ВЭД-расчёт, вердикт, скоринг поставщика">
+                🚀 Взять в работу
+            </button>
+        </form>
+        {% if h.deal_readiness and h.deal_readiness.yes_count < 5 %}
+        <div style="display:inline-block; margin-left:10px; font-size:11px; color:#fbbf24;"
+             title="По плану v3: ниши с Deal Readiness < 5/7 идут в работу только с ручным обоснованием в поле комментария">
+            ⚠ DR ниже порога — нужно ручное обоснование
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+{% endmacro %}
+
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">💡 Гипотезы по индустрии «{{ industry_run.industry_label }}»</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
-            {{ industry_run.hypotheses|length }} гипотез ·
-            🕐 {{ industry_run.finished_at|ago }}
-            <div style="margin-top:2px; color:#fbbf24; font-size:11px;">
-                ⚠ Это «сырые» предположения LLM, ещё не проверены парсером (Wave 5B-C)
-            </div>
+            {% set tops = industry_run.hypotheses|selectattr('score_total', 'ge', 70)|list|length %}
+            {% set mids = industry_run.hypotheses|selectattr('score_total', 'ge', 50)|rejectattr('score_total', 'ge', 70)|list|length %}
+            {% set lows = industry_run.hypotheses|length - tops - mids %}
+            Всего: {{ industry_run.hypotheses|length }} ·
+            <span style="color:#34d399;">в работу: {{ tops }}</span> ·
+            <span style="color:#fbbf24;">проверить: {{ mids }}</span> ·
+            <span style="color:#6b7280;">отброс: {{ lows }}</span>
+            <div style="margin-top:2px; color:#6b7280;">🕐 {{ industry_run.finished_at|ago }}</div>
         </span>
     </div>
     <div style="padding:8px 16px 16px;">
-        {% for h in industry_run.hypotheses %}
-        <div style="margin-bottom:10px; padding:12px 16px;
-                    background:rgba(255,255,255,0.02);
-                    border:1px solid rgba(255,255,255,0.06);
-                    border-left:3px solid {% if h.llm_confidence == 'высокая' %}#34d399{% elif h.llm_confidence == 'средняя' %}#fbbf24{% else %}#6b7280{% endif %};
-                    border-radius:6px;">
-            <div style="display:flex; justify-content:space-between; gap:14px; align-items:flex-start;">
-                <div style="font-weight:700; color:#e8eaed; font-size:14px; flex:1;">
-                    {{ loop.index }}. {{ h.niche_name }}
-                </div>
-                <span style="font-size:11px; padding:2px 8px; border-radius:4px;
-                             {% if h.llm_confidence == 'высокая' %}background:rgba(52,211,153,0.15); color:#34d399;
-                             {% elif h.llm_confidence == 'средняя' %}background:rgba(251,191,36,0.15); color:#fbbf24;
-                             {% else %}background:rgba(107,114,128,0.2); color:#9aa0ab;{% endif %}"
-                      title="Уверенность LLM в гипотезе">
-                    {{ h.llm_confidence }} уверенность
-                </span>
-            </div>
-            {% if h.pain %}
-            <div style="font-size:12px; color:#9aa0ab; margin-top:6px; line-height:1.5;">
-                <span style="color:#6b7280;">🩹 Боль:</span> {{ h.pain }}
-            </div>
-            {% endif %}
-            {% if h.china_solution %}
-            <div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;">
-                <span style="color:#6b7280;">🇨🇳 Китай:</span> {{ h.china_solution }}
-            </div>
-            {% endif %}
-            {% if h.why_free %}
-            <div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;">
-                <span style="color:#6b7280;">🇷🇺 Почему свободно:</span> {{ h.why_free }}
-            </div>
-            {% endif %}
-        </div>
+        {# Топ-10 развёрнуто #}
+        {% for h in industry_run.hypotheses[:10] %}
+            {{ hypothesis_card(h, loop.index) }}
         {% endfor %}
+
+        {# Остальные — в accordion, свёрнуто #}
+        {% if industry_run.hypotheses|length > 10 %}
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer; padding:10px 14px;
+                            background:rgba(255,255,255,0.03);
+                            border:1px solid rgba(255,255,255,0.06);
+                            border-radius:6px; color:#9aa0ab; font-size:13px;">
+                ▶ Показать остальные {{ industry_run.hypotheses|length - 10 }} гипотез
+                (балл &lt; топ-10)
+            </summary>
+            <div style="margin-top:10px;">
+                {% for h in industry_run.hypotheses[10:] %}
+                    {{ hypothesis_card(h, loop.index + 10) }}
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
     </div>
 </div>
 {% endif %}

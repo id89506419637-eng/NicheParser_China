@@ -91,6 +91,85 @@
 </div>
 {% endif %}
 
+{# Блок аудита поставщика (Agent 8) — gate: запускается ТОЛЬКО по кнопке.
+   До нажатия supplier_score=0 и supplier_audit_source пустой → показываем
+   кнопку. После — карточку с результатами и кнопку «перезапустить». #}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🔍 Аудит поставщика</h2>
+        {% if product.supplier_audit_source %}
+        <span class="text-muted" style="font-size:12px;">
+            источник: {{ product.supplier_audit_source }}
+        </span>
+        {% endif %}
+    </div>
+    <div style="padding:14px 18px;">
+        {% if not product.supplier_audit_source %}
+            <div style="color:#9aa0ab; font-size:13px; line-height:1.6; margin-bottom:12px;">
+                Аудит ещё не запускался. Запускай ТОЛЬКО когда ниша окончательно
+                подтверждена и ты выбрала этот конкретный товар к работе —
+                агент дёргает LLM и не имеет смысла для «черновых» позиций.
+            </div>
+            <form method="POST" action="{{ url_for('audit_suppliers_route', product_id=product.id) }}"
+                  onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Аудит идёт... 5-15 сек';">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn"
+                        style="background:rgba(52,211,153,0.15); color:#34d399;
+                               border:1px solid rgba(52,211,153,0.4);
+                               padding:8px 18px; border-radius:6px; cursor:pointer;
+                               font-size:13px; font-weight:600;">
+                    🔍 Зафиксировать товар и найти поставщиков
+                </button>
+            </form>
+        {% else %}
+            {% set risk = product.supplier_risk_level or '—' %}
+            {% if risk == 'низкий' %}{% set risk_color = '#34d399' %}
+            {% elif risk == 'средний' %}{% set risk_color = '#fbbf24' %}
+            {% elif risk == 'высокий' %}{% set risk_color = '#f87171' %}
+            {% else %}{% set risk_color = '#9aa0ab' %}{% endif %}
+            <div style="display:flex; gap:20px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:11px; color:#6b7280;">Скоринг</div>
+                    <div style="font-size:24px; font-weight:700; color:{{ risk_color }};">
+                        {{ product.supplier_score or 0 }}<span style="font-size:14px; color:#6b7280;">/100</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:11px; color:#6b7280;">Уровень риска</div>
+                    <div style="font-size:16px; font-weight:600; color:{{ risk_color }};">{{ risk }}</div>
+                </div>
+            </div>
+            {% if product.supplier_audit_recommendation %}
+            <div style="padding:10px 14px; background:rgba(255,255,255,0.03);
+                        border-left:3px solid {{ risk_color }};
+                        border-radius:4px; font-size:13px; color:#cbd5e1; line-height:1.6;">
+                <strong style="color:#e8eaed;">Рекомендация:</strong>
+                {{ product.supplier_audit_recommendation }}
+            </div>
+            {% endif %}
+            {% if product.supplier_red_flags %}
+            <div style="margin-top:12px;">
+                <div style="font-size:12px; color:#f87171; margin-bottom:6px;">
+                    🚩 Красные флаги ({{ product.supplier_red_flags|length }}):
+                </div>
+                <ul style="margin:0; padding-left:20px; font-size:12px; color:#fca5a5; line-height:1.6;">
+                    {% for flag in product.supplier_red_flags %}<li>{{ flag }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            <form method="POST" action="{{ url_for('audit_suppliers_route', product_id=product.id) }}"
+                  style="margin-top:14px;"
+                  onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Перезапуск...';">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-ghost"
+                        style="font-size:11px; padding:5px 10px;">
+                    🔄 Перезапустить аудит
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
 <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}"
       onsubmit="return confirm('Удалить этот товар?');" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -199,6 +199,25 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_batch ON hypotheses(batch_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_industry ON hypotheses(industry)")
 
+        # Deal Readiness Check (Wave 5E) — ручной чеклист по 7 вопросам
+        # для каждой гипотезы перед тем как она пойдёт в полный анализ.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS deal_readiness (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hypothesis_id INTEGER NOT NULL UNIQUE,
+                q1_demo INTEGER DEFAULT 0,
+                q2_warranty INTEGER DEFAULT 0,
+                q3_prepay INTEGER DEFAULT 0,
+                q4_term INTEGER DEFAULT 0,
+                q5_legal INTEGER DEFAULT 0,
+                q6_consumables INTEGER DEFAULT 0,
+                q7_parallel INTEGER DEFAULT 0,
+                notes TEXT DEFAULT '',
+                filled_at TEXT NOT NULL,
+                FOREIGN KEY (hypothesis_id) REFERENCES hypotheses(id) ON DELETE CASCADE
+            )
+        """)
+
         # Миграция: колонки, добавленные после первого релиза. SQLite не
         # поддерживает ADD COLUMN IF NOT EXISTS, поэтому проверяем вручную.
         _ensure_column(conn, "products", "avito_price_median",   "REAL DEFAULT 0")
@@ -210,6 +229,11 @@ def init_db() -> None:
         _ensure_column(conn, "products", "supplier_audit_recommendation", "TEXT DEFAULT ''")
         _ensure_column(conn, "products", "supplier_audit_source",       "TEXT DEFAULT ''")
         _ensure_column(conn, "products", "supplier_red_flags",          "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "hypotheses", "critic_score",   "INTEGER DEFAULT -1")
+        _ensure_column(conn, "hypotheses", "critic_reasons", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "hypotheses", "score_total",     "INTEGER DEFAULT -1")
+        _ensure_column(conn, "hypotheses", "score_breakdown", "TEXT DEFAULT '{}'")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_score ON hypotheses(score_total DESC)")
 
         # индексы для частых выборок
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_niche ON products(niche_id)")
@@ -443,6 +467,31 @@ def delete_product(product_id: int) -> None:
         conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
 
 
+def update_supplier_audit(product_id: int, *, score: int, risk_level: str,
+                          recommendation: str, source: str, red_flags: list) -> None:
+    """
+    Обновить supplier-поля одного товара (после ручного запуска Agent 8 по
+    кнопке «Найти поставщиков» на /product/<id>).
+    """
+    with get_connection() as conn:
+        conn.execute("""
+            UPDATE products SET
+                supplier_score = ?,
+                supplier_risk_level = ?,
+                supplier_audit_recommendation = ?,
+                supplier_audit_source = ?,
+                supplier_red_flags = ?
+            WHERE id = ?
+        """, (
+            int(score),
+            risk_level or "",
+            recommendation or "",
+            source or "",
+            json.dumps(red_flags or [], ensure_ascii=False),
+            product_id,
+        ))
+
+
 # === Demand history ===
 
 def save_demand_snapshot(snapshot: DemandSnapshot) -> int:
@@ -648,32 +697,94 @@ def get_runs_grouped(limit_runs: int = 30) -> List[dict]:
 
 # === Hypotheses (Agent 0A: Industry Explorer) ===
 
-def save_hypotheses(hypotheses: List[Hypothesis]) -> int:
-    """Сохранить пачку гипотез одного прогона. Возвращает число сохранённых."""
+def save_hypotheses(hypotheses: List[Hypothesis]) -> List[int]:
+    """Сохранить пачку гипотез одного прогона. Возвращает список их id."""
     if not hypotheses:
-        return 0
+        return []
+    ids: List[int] = []
     with get_connection() as conn:
         cur = conn.cursor()
         for h in hypotheses:
             now = h.created_at or datetime.now().isoformat()
             cur.execute("""
                 INSERT INTO hypotheses (batch_id, industry, niche_name, pain,
-                    china_solution, why_free, llm_confidence, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    china_solution, why_free, llm_confidence,
+                    critic_score, critic_reasons,
+                    score_total, score_breakdown, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 h.batch_id, h.industry, h.niche_name, h.pain,
-                h.china_solution, h.why_free, h.llm_confidence, now,
+                h.china_solution, h.why_free, h.llm_confidence,
+                int(h.critic_score), h.critic_reasons or "[]",
+                int(h.score_total), h.score_breakdown or "{}", now,
             ))
-        return len(hypotheses)
+            ids.append(cur.lastrowid)
+        return ids
+
+
+def update_hypothesis_critic(hyp_id: int, critic_score: int, critic_reasons: list) -> None:
+    """Обновить результаты Agent 0B для одной гипотезы."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE hypotheses SET critic_score = ?, critic_reasons = ? WHERE id = ?",
+            (int(critic_score), json.dumps(critic_reasons or [], ensure_ascii=False), hyp_id),
+        )
+
+
+def get_hypothesis_by_id(hyp_id: int) -> Optional[dict]:
+    """Получить одну гипотезу по id (для перехода в Этап 5)."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM hypotheses WHERE id = ?", (hyp_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["critic_reasons_list"] = json.loads(d.get("critic_reasons") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            d["critic_reasons_list"] = []
+        try:
+            d["score_breakdown_dict"] = json.loads(d.get("score_breakdown") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d["score_breakdown_dict"] = {}
+        return d
 
 
 def get_hypotheses_by_batch(batch_id: str) -> List[dict]:
+    """
+    Гипотезы одной пачки + подгруженные DR-чеклисты (LEFT JOIN).
+    Каждая гипотеза получает поле `deal_readiness`: None если чеклист не
+    заполнен, иначе dict с q1..q7, notes, yes_count.
+    """
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM hypotheses WHERE batch_id = ? ORDER BY id ASC",
             (batch_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        if not rows:
+            return []
+
+        hyp_ids = [r["id"] for r in rows]
+        placeholders = ",".join("?" * len(hyp_ids))
+        dr_rows = conn.execute(
+            f"SELECT * FROM deal_readiness WHERE hypothesis_id IN ({placeholders})",
+            hyp_ids,
+        ).fetchall()
+        dr_by_hid = {row["hypothesis_id"]: dict(row) for row in dr_rows}
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["critic_reasons_list"] = json.loads(d.get("critic_reasons") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["critic_reasons_list"] = []
+
+            dr = dr_by_hid.get(r["id"])
+            if dr:
+                dr["yes_count"] = sum(int(dr.get(k, 0)) for k, _ in DR_QUESTIONS)
+            d["deal_readiness"] = dr  # None если не заполнен
+            result.append(d)
+        return result
 
 
 def get_hypothesis_batches(limit: int = 20) -> List[dict]:
@@ -690,3 +801,70 @@ def get_hypothesis_batches(limit: int = 20) -> List[dict]:
             LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+
+def update_hypothesis_score(hyp_id: int, score_total: int, score_breakdown: dict) -> None:
+    """Обновить итоговый балл и разбивку (после пересчёта от Deal Readiness)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE hypotheses SET score_total = ?, score_breakdown = ? WHERE id = ?",
+            (int(score_total), json.dumps(score_breakdown, ensure_ascii=False), hyp_id),
+        )
+
+
+# === Deal Readiness (Wave 5E) ===
+
+DR_QUESTIONS = (
+    ("q1_demo",        "Можно объяснить ценность за 30 секунд БЕЗ физического показа"),
+    ("q2_warranty",    "Есть понятный сценарий гарантии / замены"),
+    ("q3_prepay",      "Клиент платит предоплату охотно (не сопротивляется)"),
+    ("q4_term",        "Срок поставки 30-45 дней приемлем для этой категории"),
+    ("q5_legal",       "Юридическая чистота: нет нарушения торговой марки"),
+    ("q6_consumables", "Есть расходники / повторные покупки (доп. ценность)"),
+    ("q7_parallel",    "Можно сделать 5-10 параллельных объявлений по товару"),
+)
+
+
+def save_deal_readiness(hyp_id: int, answers: dict, notes: str = "") -> None:
+    """Сохранить чеклист Deal Readiness для гипотезы (UPSERT)."""
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO deal_readiness (hypothesis_id, q1_demo, q2_warranty, q3_prepay,
+                q4_term, q5_legal, q6_consumables, q7_parallel, notes, filled_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(hypothesis_id) DO UPDATE SET
+                q1_demo = excluded.q1_demo,
+                q2_warranty = excluded.q2_warranty,
+                q3_prepay = excluded.q3_prepay,
+                q4_term = excluded.q4_term,
+                q5_legal = excluded.q5_legal,
+                q6_consumables = excluded.q6_consumables,
+                q7_parallel = excluded.q7_parallel,
+                notes = excluded.notes,
+                filled_at = excluded.filled_at
+        """, (
+            hyp_id,
+            int(answers.get("q1_demo", 0)),
+            int(answers.get("q2_warranty", 0)),
+            int(answers.get("q3_prepay", 0)),
+            int(answers.get("q4_term", 0)),
+            int(answers.get("q5_legal", 0)),
+            int(answers.get("q6_consumables", 0)),
+            int(answers.get("q7_parallel", 0)),
+            notes,
+            datetime.now().isoformat(),
+        ))
+
+
+def get_deal_readiness(hyp_id: int) -> Optional[dict]:
+    """Прочитать DR-чеклист по гипотезе. Возвращает None если не заполнен."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM deal_readiness WHERE hypothesis_id = ?", (hyp_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["yes_count"] = sum(int(d.get(k, 0)) for k, _ in DR_QUESTIONS)
+        d["questions"] = DR_QUESTIONS
+        return d
