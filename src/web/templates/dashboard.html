@@ -98,6 +98,101 @@
 }
 </style>
 
+<!-- 🔬 Agent 0A: Industry Explorer (Wave 5A) -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🔬 Разведка свободных ниш по индустрии</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Agent 0A · LLM сгенерит 30-40 гипотез о товарах, которые в Китае есть, а в РФ — мало
+        </span>
+    </div>
+    <form id="industry-form" action="{{ url_for('explore_industry_route') }}" method="POST"
+          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="industry" required class="select"
+                style="flex:1; min-width:280px; padding:10px 14px; font-size:14px;
+                       background:#1a1b25; border:1px solid rgba(255,255,255,0.12);
+                       border-radius:8px; color:#e8eaed;">
+            <option value="">— выбери индустрию —</option>
+            {% for ind in industries %}
+                <option value="{{ ind.key }}"
+                    {% if industry_run.industry == ind.key %}selected{% endif %}>
+                    {{ ind.label }}
+                </option>
+            {% endfor %}
+        </select>
+        <button id="industry-submit" type="submit" class="btn btn-primary">
+            <span class="btn-icon">🔬</span> <span class="btn-label">Исследовать</span>
+        </button>
+    </form>
+    <div id="industry-loader" style="display:none; align-items:center; gap:14px;
+              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🔬</span>
+        <div style="flex:1;">
+            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                Agent 0A исследует индустрию <span id="industry-loader-name"></span>
+            </div>
+            <div style="color:#a5b4fc; font-size:12px; margin-top:2px;">
+                LLM думает над болями профессии и китайскими решениями. Обычно 20-40 секунд.
+            </div>
+        </div>
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+</div>
+
+<!-- Результаты Agent 0A -->
+{% if industry_run.hypotheses %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">💡 Гипотезы по индустрии «{{ industry_run.industry_label }}»</h2>
+        <span class="text-muted" style="font-size:12px; text-align:right;">
+            {{ industry_run.hypotheses|length }} гипотез ·
+            🕐 {{ industry_run.finished_at|ago }}
+            <div style="margin-top:2px; color:#fbbf24; font-size:11px;">
+                ⚠ Это «сырые» предположения LLM, ещё не проверены парсером (Wave 5B-C)
+            </div>
+        </span>
+    </div>
+    <div style="padding:8px 16px 16px;">
+        {% for h in industry_run.hypotheses %}
+        <div style="margin-bottom:10px; padding:12px 16px;
+                    background:rgba(255,255,255,0.02);
+                    border:1px solid rgba(255,255,255,0.06);
+                    border-left:3px solid {% if h.llm_confidence == 'высокая' %}#34d399{% elif h.llm_confidence == 'средняя' %}#fbbf24{% else %}#6b7280{% endif %};
+                    border-radius:6px;">
+            <div style="display:flex; justify-content:space-between; gap:14px; align-items:flex-start;">
+                <div style="font-weight:700; color:#e8eaed; font-size:14px; flex:1;">
+                    {{ loop.index }}. {{ h.niche_name }}
+                </div>
+                <span style="font-size:11px; padding:2px 8px; border-radius:4px;
+                             {% if h.llm_confidence == 'высокая' %}background:rgba(52,211,153,0.15); color:#34d399;
+                             {% elif h.llm_confidence == 'средняя' %}background:rgba(251,191,36,0.15); color:#fbbf24;
+                             {% else %}background:rgba(107,114,128,0.2); color:#9aa0ab;{% endif %}"
+                      title="Уверенность LLM в гипотезе">
+                    {{ h.llm_confidence }} уверенность
+                </span>
+            </div>
+            {% if h.pain %}
+            <div style="font-size:12px; color:#9aa0ab; margin-top:6px; line-height:1.5;">
+                <span style="color:#6b7280;">🩹 Боль:</span> {{ h.pain }}
+            </div>
+            {% endif %}
+            {% if h.china_solution %}
+            <div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;">
+                <span style="color:#6b7280;">🇨🇳 Китай:</span> {{ h.china_solution }}
+            </div>
+            {% endif %}
+            {% if h.why_free %}
+            <div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;">
+                <span style="color:#6b7280;">🇷🇺 Почему свободно:</span> {{ h.why_free }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <script>
 (function() {
     // === Шаги пайплайна с псевдо-таймингом (секунды от старта) ===
@@ -211,6 +306,26 @@
 
     // Запуск done-баннера при загрузке страницы
     showDoneBanner();
+
+    // === Лоадер для Agent 0A (Industry Explorer) ===
+    var industryForm = document.getElementById('industry-form');
+    if (industryForm) {
+        industryForm.addEventListener('submit', function() {
+            var sel = industryForm.querySelector('select[name="industry"]');
+            var btn = document.getElementById('industry-submit');
+            var loader = document.getElementById('industry-loader');
+            var name = document.getElementById('industry-loader-name');
+            if (sel && name && sel.selectedIndex > 0) {
+                name.textContent = '«' + sel.options[sel.selectedIndex].text + '»';
+            }
+            if (btn) {
+                btn.disabled = true;
+                var label = btn.querySelector('.btn-label');
+                if (label) label.textContent = 'Исследую...';
+            }
+            if (loader) loader.style.display = 'flex';
+        });
+    }
 })();
 </script>
 

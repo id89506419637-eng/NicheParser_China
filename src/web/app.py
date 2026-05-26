@@ -32,6 +32,7 @@ from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
 from src.pipeline.agents.verdict_agent import issue_verdicts
 from src.pipeline.agents.supplier_audit import audit_suppliers
+from src.pipeline.agents.industry_explorer import explore_industry, INDUSTRIES
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
 
@@ -224,6 +225,11 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         "runs_history": runs_history,
         "filters": filters,
         "active_run": active_run,
+        # Agent 0A — Industry Explorer
+        "industries": [
+            {"key": k, "label": v["label"]} for k, v in INDUSTRIES.items()
+        ],
+        "industry_run": _last_industry_run,
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
         # пропадали при следующих переходах/запросах. Хранится в памяти
         # процесса (см. _last_niche_run).
@@ -420,6 +426,54 @@ def run_niche():
     except Exception as e:
         logger.error(f"_persist_run failed for '{niche}': {type(e).__name__}: {e}")
 
+    return render_template("dashboard.html", **_dashboard_context())
+
+
+# Память процесса для последнего прогона Agent 0A — чтобы свежие гипотезы
+# показывались на дашборде сразу без обращения к БД.
+_last_industry_run: dict = {"industry": "", "industry_label": "", "hypotheses": [],
+                            "batch_id": "", "finished_at": ""}
+
+
+@app.route("/explore-industry", methods=["POST"])
+def explore_industry_route():
+    """
+    Agent 0A: пользователь выбирает индустрию → LLM генерит 30-40 гипотез
+    о свободных нишах. Гипотезы сохраняются в БД и в памяти процесса.
+    """
+    industry_key = (request.form.get("industry") or "").strip()
+    if industry_key not in INDUSTRIES:
+        flash("Выбери одну из доступных индустрий", "warning")
+        return redirect(url_for("dashboard"))
+
+    logger.info(f"/explore-industry: запуск Agent 0A по '{industry_key}'")
+    hypotheses, batch_id, source = explore_industry(industry_key)
+
+    if source != "llm" or not hypotheses:
+        flash("Agent 0A не смог сгенерировать гипотезы (проверь OPENROUTER_API_KEY и интернет)", "error")
+        return redirect(url_for("dashboard"))
+
+    # Сохраняем в БД — для истории и для будущих волн (Critic, Scoring)
+    try:
+        db.save_hypotheses(hypotheses)
+    except Exception as e:
+        logger.error(f"save_hypotheses failed: {type(e).__name__}: {e}")
+
+    # В память процесса — для немедленного показа на дашборде
+    _last_industry_run["industry"] = industry_key
+    _last_industry_run["industry_label"] = INDUSTRIES[industry_key]["label"]
+    _last_industry_run["hypotheses"] = [
+        {
+            "niche_name": h.niche_name, "pain": h.pain,
+            "china_solution": h.china_solution, "why_free": h.why_free,
+            "llm_confidence": h.llm_confidence,
+        }
+        for h in hypotheses
+    ]
+    _last_industry_run["batch_id"] = batch_id
+    _last_industry_run["finished_at"] = datetime.now().isoformat()
+
+    flash(f"Agent 0A: сгенерировано {len(hypotheses)} гипотез по «{INDUSTRIES[industry_key]['label']}»", "success")
     return render_template("dashboard.html", **_dashboard_context())
 
 

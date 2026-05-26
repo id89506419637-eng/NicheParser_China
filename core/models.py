@@ -112,6 +112,25 @@ class WordstatItem:
 
 
 @dataclass
+class Hypothesis:
+    """
+    Гипотеза о свободной нише от Agent 0A (Industry Explorer).
+    Это «сырое» предположение от LLM ДО проверки парсером и до Deal Readiness.
+    В Wave 5B будет дополняться полями critic_score / critic_reasons.
+    В Wave 5C — полным 7-факторным скорингом.
+    """
+    id: Optional[int] = None
+    batch_id: str = ""               # uuid одного прогона: «вот эти 30 гипотез сгенерены вместе»
+    industry: str = ""               # «стройка-отделка» / «мебельное производство» / ...
+    niche_name: str = ""             # «Безвоздушные покрасочные станции для фасадов»
+    pain: str = ""                   # «Маляры красят валиками, медленно и дорого по труду»
+    china_solution: str = ""         # «Аппараты Wagner-клонов от $800»
+    why_free: str = ""               # «В РФ только европейские, $5000+»
+    llm_confidence: str = ""         # «высокая» / «средняя» / «низкая»
+    created_at: str = ""
+
+
+@dataclass
 class AlibabaProduct:
     """Сырой результат парсинга одной карточки Alibaba."""
     title_en: str = ""

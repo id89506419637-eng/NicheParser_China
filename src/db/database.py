@@ -12,7 +12,7 @@ from difflib import SequenceMatcher
 from typing import List, Optional
 
 from core.config import DB_PATH
-from core.models import Niche, Product, DemandSnapshot
+from core.models import Niche, Product, DemandSnapshot, Hypothesis
 
 
 # Стоп-слова и шумные префиксы при сравнении ниш на дубликаты.
@@ -180,6 +180,24 @@ def init_db() -> None:
                 error_message TEXT DEFAULT ''
             )
         """)
+
+        # Гипотезы от Agent 0A (Industry Explorer). Один прогон = один batch_id.
+        # В Wave 5B сюда добавится critic_score / critic_reasons.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS hypotheses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id TEXT NOT NULL,
+                industry TEXT NOT NULL,
+                niche_name TEXT NOT NULL,
+                pain TEXT DEFAULT '',
+                china_solution TEXT DEFAULT '',
+                why_free TEXT DEFAULT '',
+                llm_confidence TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_batch ON hypotheses(batch_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_industry ON hypotheses(industry)")
 
         # Миграция: колонки, добавленные после первого релиза. SQLite не
         # поддерживает ADD COLUMN IF NOT EXISTS, поэтому проверяем вручную.
@@ -626,3 +644,49 @@ def get_runs_grouped(limit_runs: int = 30) -> List[dict]:
                 "niches": sorted({p["niche_name_ru"] for p in products if p.get("niche_name_ru")}),
             })
         return result
+
+
+# === Hypotheses (Agent 0A: Industry Explorer) ===
+
+def save_hypotheses(hypotheses: List[Hypothesis]) -> int:
+    """Сохранить пачку гипотез одного прогона. Возвращает число сохранённых."""
+    if not hypotheses:
+        return 0
+    with get_connection() as conn:
+        cur = conn.cursor()
+        for h in hypotheses:
+            now = h.created_at or datetime.now().isoformat()
+            cur.execute("""
+                INSERT INTO hypotheses (batch_id, industry, niche_name, pain,
+                    china_solution, why_free, llm_confidence, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                h.batch_id, h.industry, h.niche_name, h.pain,
+                h.china_solution, h.why_free, h.llm_confidence, now,
+            ))
+        return len(hypotheses)
+
+
+def get_hypotheses_by_batch(batch_id: str) -> List[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM hypotheses WHERE batch_id = ? ORDER BY id ASC",
+            (batch_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_hypothesis_batches(limit: int = 20) -> List[dict]:
+    """
+    Список последних прогонов Agent 0A: один batch = одна индустрия за один раз.
+    Возвращает [{batch_id, industry, created_at, count}], от свежего к старому.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT batch_id, industry, MIN(created_at) AS created_at, COUNT(*) AS count
+            FROM hypotheses
+            GROUP BY batch_id
+            ORDER BY MIN(created_at) DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
