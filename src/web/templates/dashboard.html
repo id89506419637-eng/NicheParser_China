@@ -269,15 +269,15 @@
            Показываем только если есть id (гипотеза реально сохранена в БД). #}
         {% if h.id %}
         <form method="POST" action="{{ url_for('take_hypothesis', hyp_id=h.id) }}"
-              style="margin-top:10px; display:inline-block;"
-              onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Запускаю пайплайн...';">
+              data-niche-name="{{ h.niche_name }}"
+              style="margin-top:10px; display:inline-block;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm"
                     style="background:{% if score >= 70 %}rgba(52,211,153,0.15); color:#34d399; border:1px solid rgba(52,211,153,0.4)
                            {% elif score >= 50 %}rgba(251,191,36,0.15); color:#fbbf24; border:1px solid rgba(251,191,36,0.4)
                            {% else %}rgba(107,114,128,0.15); color:#9aa0ab; border:1px solid rgba(107,114,128,0.3){% endif %};
                            padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;"
-                    title="Прогнать через 8-агентный пайплайн: Wordstat, Alibaba, Avito, ВЭД-расчёт, вердикт, скоринг поставщика">
+                    title="Прогнать через 7-агентный пайплайн (Agent 8 запускается отдельно на странице товара)">
                 🚀 Взять в работу
             </button>
         </form>
@@ -336,15 +336,16 @@
 (function() {
     // === Шаги пайплайна с псевдо-таймингом (секунды от старта) ===
     // На mock-данных порядки времени: LLM-шаги ~3-8с, остальное <1с.
+    // Agent 8 (Supplier Audit) НЕ в общем пайплайне — запускается отдельно
+    // кнопкой «Найти поставщиков» на /product/<id> (gate Wave 5D).
     var STEPS = [
         { from: 0,  label: 'Агент 1 · Генерирую товары (LLM)' },
         { from: 6,  label: 'Агент 2 · Проверяю спрос (Wordstat)' },
         { from: 8,  label: 'Агент 3 · Фильтрую слабые ниши' },
         { from: 10, label: 'Агент 4 · Ищу поставщиков на Alibaba' },
-        { from: 13, label: 'Агент 5 · Проверяю цены на Авито' },
-        { from: 16, label: 'Агент 6 · Считаю пессимистичный ВЭД' },
-        { from: 19, label: 'Агент 7 · Выношу вердикты (LLM)' },
-        { from: 26, label: 'Агент 8 · Скорю поставщиков (LLM)' }
+        { from: 13, label: 'Агент 6 · Проверяю цены на Авито' },
+        { from: 16, label: 'Агент 5 · Считаю пессимистичный ВЭД' },
+        { from: 19, label: 'Агент 7 · Выношу вердикты (LLM)' }
     ];
 
     function fmtDuration(seconds) {
@@ -378,10 +379,7 @@
     }
 
     // === Лоадер с таймером и шагами ===
-    var form = document.getElementById('niche-form');
-    if (!form) return;
-
-    // Заполняем список шагов в лоадере (изначально серые)
+    // Заполняем список шагов в лоадере один раз (изначально серые)
     var stepsBox = document.getElementById('niche-loader-steps');
     if (stepsBox) {
         STEPS.forEach(function(s, i) {
@@ -392,55 +390,82 @@
         });
     }
 
-    form.addEventListener('submit', function() {
-        var input = form.querySelector('input[name="niche"]');
-        var btn = document.getElementById('niche-submit');
-        var loader = document.getElementById('niche-loader');
-        var name = document.getElementById('niche-loader-name');
-        var timer = document.getElementById('niche-loader-timer');
-        var stepText = document.getElementById('niche-loader-step');
+    // Запускает лоадер для любой формы, которая дёргает полный 8-агентный
+    // пайплайн (форма ниши, кнопка «Взять в работу» на гипотезе и т.п.).
+    // displayName — что показать как «название прогона» («запрос», «гипотеза…»).
+    function attachPipelineLoader(form, displayName) {
+        if (!form) return;
+        form.addEventListener('submit', function() {
+            var btn = form.querySelector('button[type="submit"]');
+            var loader = document.getElementById('niche-loader');
+            var name = document.getElementById('niche-loader-name');
+            var timer = document.getElementById('niche-loader-timer');
+            var stepText = document.getElementById('niche-loader-step');
 
-        if (input && name) name.textContent = '«' + input.value.trim() + '»';
-        if (btn) {
-            btn.disabled = true;
-            var label = btn.querySelector('.btn-label');
-            if (label) label.textContent = 'Ищу...';
-        }
-        if (loader) loader.style.display = 'flex';
-
-        // Запоминаем старт для done-banner после рефреша
-        sessionStorage.setItem('niche-run-started', Date.now().toString());
-
-        var startedAt = Date.now();
-        function tick() {
-            var elapsed = (Date.now() - startedAt) / 1000;
-            if (timer) timer.textContent = fmtDuration(elapsed);
-
-            // Какой шаг сейчас активен — последний у которого from <= elapsed
-            var activeIdx = 0;
-            for (var i = 0; i < STEPS.length; i++) {
-                if (STEPS[i].from <= elapsed) activeIdx = i;
-            }
-            STEPS.forEach(function(s, i) {
-                var el = document.getElementById('niche-step-' + i);
-                if (!el) return;
-                if (i < activeIdx) {
-                    el.textContent = '✅ ' + s.label;
-                    el.style.color = '#34d399';
-                } else if (i === activeIdx) {
-                    el.textContent = '🔄 ' + s.label;
-                    el.style.color = '#a5b4fc';
-                    el.style.fontWeight = '600';
-                } else {
-                    el.textContent = '⏳ ' + s.label;
-                    el.style.color = '#6b7280';
-                    el.style.fontWeight = '400';
+            if (name) name.textContent = displayName || '';
+            if (btn) {
+                btn.disabled = true;
+                var label = btn.querySelector('.btn-label');
+                if (label) label.textContent = 'Ищу...';
+                else if (!btn.dataset.origText) {
+                    btn.dataset.origText = btn.textContent;
+                    btn.textContent = '⏳ ' + (btn.dataset.origText.trim() || 'Запускаю...');
                 }
-            });
-            if (stepText && STEPS[activeIdx]) stepText.textContent = STEPS[activeIdx].label + '...';
-        }
-        tick();
-        setInterval(tick, 500);
+            }
+            if (loader) loader.style.display = 'flex';
+
+            // Запоминаем старт для done-banner после рефреша
+            sessionStorage.setItem('niche-run-started', Date.now().toString());
+
+            var startedAt = Date.now();
+            function tick() {
+                var elapsed = (Date.now() - startedAt) / 1000;
+                if (timer) timer.textContent = fmtDuration(elapsed);
+
+                // Какой шаг сейчас активен — последний у которого from <= elapsed
+                var activeIdx = 0;
+                for (var i = 0; i < STEPS.length; i++) {
+                    if (STEPS[i].from <= elapsed) activeIdx = i;
+                }
+                STEPS.forEach(function(s, i) {
+                    var el = document.getElementById('niche-step-' + i);
+                    if (!el) return;
+                    if (i < activeIdx) {
+                        el.textContent = '✅ ' + s.label;
+                        el.style.color = '#34d399';
+                    } else if (i === activeIdx) {
+                        el.textContent = '🔄 ' + s.label;
+                        el.style.color = '#a5b4fc';
+                        el.style.fontWeight = '600';
+                    } else {
+                        el.textContent = '⏳ ' + s.label;
+                        el.style.color = '#6b7280';
+                        el.style.fontWeight = '400';
+                    }
+                });
+                if (stepText && STEPS[activeIdx]) stepText.textContent = STEPS[activeIdx].label + '...';
+            }
+            tick();
+            setInterval(tick, 500);
+        });
+    }
+
+    // Форма «🤖 Подобрать товары по нише» — берём название из input
+    var nicheForm = document.getElementById('niche-form');
+    if (nicheForm) {
+        nicheForm.addEventListener('submit', function() {
+            var input = nicheForm.querySelector('input[name="niche"]');
+            var name = document.getElementById('niche-loader-name');
+            if (input && name) name.textContent = '«' + input.value.trim() + '»';
+        }, true);  // capture, чтобы выполнилось ДО attachPipelineLoader
+        attachPipelineLoader(nicheForm, '');
+    }
+
+    // Все формы «🚀 Взять в работу» на карточках гипотез (Wave 5D).
+    // У каждой карточки в data-niche-name лежит имя гипотезы.
+    document.querySelectorAll('form[action*="/take-hypothesis/"]').forEach(function(form) {
+        var name = form.dataset.nicheName || 'гипотеза';
+        attachPipelineLoader(form, '«' + name + '»');
     });
 
     // Запуск done-баннера при загрузке страницы
@@ -561,9 +586,6 @@
                                         </a>
                                         — ${{ "%.2f"|format(o.price_usd_min) }}{% if o.price_usd_max > o.price_usd_min %}–${{ "%.2f"|format(o.price_usd_max) }}{% endif %},
                                         MOQ {{ o.moq or '—' }}, ⭐{{ "%.1f"|format(o.supplier_rating) }}
-                                        {% if o.certificates %}
-                                            {% for c in o.certificates %}<span class="cert-badge">{{ c }}</span>{% endfor %}
-                                        {% endif %}
                                     </li>
                                     {% endfor %}
                                 </ul>
@@ -883,13 +905,6 @@
                                 {% if p.margin_percent_min != p.margin_percent_max %}
                                     · разброс маржи {{ '%.0f'|format(p.margin_percent_min) }}–{{ '%.0f'|format(p.margin_percent_max) }}%
                                 {% endif %}
-                            </div>
-                        {% endif %}
-                        {% if p.certificates %}
-                            <div class="cert-row" style="margin-top:4px;">
-                                {% for c in p.certificates.split(',') %}
-                                    <span class="cert-badge">{{ c }}</span>
-                                {% endfor %}
                             </div>
                         {% endif %}
                     </td>

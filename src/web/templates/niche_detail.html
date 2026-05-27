@@ -52,11 +52,6 @@
                 <tr>
                     <td>
                         <div class="niche-name" title="{{ p.title_en }}">{{ p.title_en|truncate(60) }}</div>
-                        {% if p.certificates %}
-                            <div class="cert-row">
-                                {% for c in p.certificates.split(',') %}<span class="cert-badge">{{ c }}</span>{% endfor %}
-                            </div>
-                        {% endif %}
                     </td>
                     <td>${{ "%.2f"|format(p.price_usd_min) }}</td>
                     <td>{{ p.moq or '—' }}</td>
