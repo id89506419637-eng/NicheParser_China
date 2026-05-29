@@ -211,7 +211,10 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
     unique_niches = len(niches)
     profitable = len([p for p in top_products if p.get("verdict") == "ВЕЗЁМ"])
     total_runs = db.count_runs()
-    runs_history = db.get_runs_grouped(limit_runs=30)
+    # 10 последних прогонов на странице — больше скроллить тяжело.
+    # Старше — пока никуда не показываем, но в БД остаются (пагинацию
+    # сделаем когда реально понадобится копаться в архиве).
+    runs_history = db.get_runs_grouped(limit_runs=10)
 
     ctx = {
         "products": top_products,

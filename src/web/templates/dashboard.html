@@ -1042,11 +1042,10 @@
                 <table class="data-table" style="margin-top:0;">
                     <thead>
                         <tr>
-                            <th style="width:30%;">Товар</th>
+                            <th style="width:32%;">Товар</th>
                             <th>Маржа</th>
                             <th>Прибыль/MOQ</th>
                             <th>Вердикт</th>
-                            <th>Поставщик</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -1092,17 +1091,6 @@
                                 </span>
                                 {% if p.verdict_reason %}
                                     <div style="font-size:11px; color:#9aa0ab; margin-top:4px; line-height:1.3;">{{ p.verdict_reason|truncate(120) }}</div>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if p.supplier_score and p.supplier_score > 0 %}
-                                    {% set ss = p.supplier_score %}
-                                    <span class="margin-badge {% if ss >= 70 %}margin--good{% elif ss >= 40 %}margin--mid{% else %}margin--low{% endif %}"
-                                          style="font-size:11px;">
-                                        {{ ss }}/100
-                                    </span>
-                                {% else %}
-                                    <span class="text-muted" style="font-size:12px;">—</span>
                                 {% endif %}
                             </td>
                             <td>
