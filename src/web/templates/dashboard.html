@@ -177,6 +177,28 @@
                       title="Уверенность Agent 0A в гипотезе">
                     LLM: {{ h.llm_confidence }}
                 </span>
+                {# Регуляторный риск от Agent 0B (Wave 5+) — сигнальный бейдж #}
+                {% if h.regulatory_risk and h.regulatory_risk != 'none' %}
+                    {% if h.regulatory_risk == 'dual_use' %}
+                        {% set risk_label = '⚠ двойное назначение' %}
+                        {% set risk_title = 'LLM подозревает попадание в перечень товаров двойного назначения (ФСТЭК). Сигнальная подсказка — точный код и допуск выясняет таможенный брокер.' %}
+                        {% set risk_color = '#f87171' %}{% set risk_bg = 'rgba(248,113,113,0.12)' %}
+                    {% elif h.regulatory_risk == 'regulated' %}
+                        {% set risk_label = '⚠ особый контроль' %}
+                        {% set risk_title = 'LLM подозревает сложную обязательную сертификацию (медтехника → РЗН, продукты → Россельхознадзор, ТР ТС). Уточняй у брокера.' %}
+                        {% set risk_color = '#fb923c' %}{% set risk_bg = 'rgba(251,146,60,0.12)' %}
+                    {% else %}
+                        {% set risk_label = '? регуляторный риск' %}
+                        {% set risk_title = 'LLM не уверен — категория на стыке регуляторов. Нужно ручное уточнение через брокера.' %}
+                        {% set risk_color = '#fbbf24' %}{% set risk_bg = 'rgba(251,191,36,0.12)' %}
+                    {% endif %}
+                    <span style="font-size:11px; padding:2px 8px; border-radius:4px;
+                                 background:{{ risk_bg }}; color:{{ risk_color }};
+                                 border:1px solid {{ risk_color }}40; font-weight:600;"
+                          title="{{ risk_title }}">
+                        {{ risk_label }}
+                    </span>
+                {% endif %}
             </div>
         </div>
 

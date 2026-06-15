@@ -199,6 +199,51 @@ def _filter_ago(iso_dt: Optional[str]) -> str:
 
 # ============ Pages ============
 
+def _hydrate_industry_run_from_db() -> dict:
+    """
+    Если `_last_industry_run` пуст (после рестарта сервера) — подгружаем
+    последний batch гипотез из БД. Нормализуем под ту же структуру, что
+    создаёт explore_industry_route, чтобы шаблон рендерил одинаково.
+    Возвращаем dict с {industry, industry_label, hypotheses, batch_id,
+    finished_at} либо пустой dict если в БД ничего нет.
+    """
+    batches = db.get_hypothesis_batches(limit=1)
+    if not batches:
+        return {"industry": "", "industry_label": "", "hypotheses": [],
+                "batch_id": "", "finished_at": ""}
+
+    batch = batches[0]
+    rows = db.get_hypotheses_by_batch(batch["batch_id"])
+    hypotheses = [
+        {
+            "id": r["id"],
+            "niche_name": r["niche_name"],
+            "pain": r["pain"],
+            "china_solution": r["china_solution"],
+            "why_free": r["why_free"],
+            "llm_confidence": r["llm_confidence"],
+            "critic_score": r["critic_score"],
+            "critic_reasons": r["critic_reasons_list"],
+            "regulatory_risk": r.get("regulatory_risk") or "",
+            "score_total": r["score_total"],
+            "score_breakdown": r["score_breakdown_dict"],
+            "deal_readiness": r["deal_readiness"],
+        }
+        for r in rows
+    ]
+    # Сортируем как в свежем прогоне — по убыванию балла
+    hypotheses.sort(key=lambda x: -(x.get("score_total") or -1))
+
+    industry_label = INDUSTRIES.get(batch["industry"], {}).get("label", batch["industry"])
+    return {
+        "industry": batch["industry"],
+        "industry_label": industry_label,
+        "hypotheses": hypotheses,
+        "batch_id": batch["batch_id"],
+        "finished_at": batch["created_at"],
+    }
+
+
 def _dashboard_context(extra: Optional[dict] = None) -> dict:
     """Собирает контекст дашборда. Используется обычным GET и страницей с генерацией."""
     filters = _read_filters(request.args)
@@ -215,6 +260,13 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
     # Старше — пока никуда не показываем, но в БД остаются (пагинацию
     # сделаем когда реально понадобится копаться в архиве).
     runs_history = db.get_runs_grouped(limit_runs=10)
+
+    # Если в памяти процесса пусто (свежий старт сервера) — подгружаем
+    # последний batch гипотез из БД. Иначе после рестарта дашборд бы
+    # показывал «нет гипотез», хотя в БД они есть.
+    industry_run = _last_industry_run
+    if not industry_run.get("hypotheses"):
+        industry_run = _hydrate_industry_run_from_db()
 
     ctx = {
         "products": top_products,
@@ -234,7 +286,7 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         "industries": [
             {"key": k, "label": v["label"]} for k, v in INDUSTRIES.items()
         ],
-        "industry_run": _last_industry_run,
+        "industry_run": industry_run,
         # Wave 5E — список вопросов для DR-чеклиста (rendered в шаблоне)
         "dr_questions": db.DR_QUESTIONS,
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
@@ -551,6 +603,7 @@ def explore_industry_route():
             "llm_confidence": h.llm_confidence,
             "critic_score": h.critic_score,
             "critic_reasons": json.loads(h.critic_reasons or "[]"),
+            "regulatory_risk": h.regulatory_risk or "",
             "score_total": h.score_total,
             "score_breakdown": json.loads(h.score_breakdown or "{}"),
             "deal_readiness": None,  # ещё не заполнен пользователем

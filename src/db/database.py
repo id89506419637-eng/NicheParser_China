@@ -231,6 +231,7 @@ def init_db() -> None:
         _ensure_column(conn, "products", "supplier_red_flags",          "TEXT DEFAULT '[]'")
         _ensure_column(conn, "hypotheses", "critic_score",   "INTEGER DEFAULT -1")
         _ensure_column(conn, "hypotheses", "critic_reasons", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "hypotheses", "regulatory_risk", "TEXT DEFAULT ''")
         _ensure_column(conn, "hypotheses", "score_total",     "INTEGER DEFAULT -1")
         _ensure_column(conn, "hypotheses", "score_breakdown", "TEXT DEFAULT '{}'")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_score ON hypotheses(score_total DESC)")
@@ -709,13 +710,13 @@ def save_hypotheses(hypotheses: List[Hypothesis]) -> List[int]:
             cur.execute("""
                 INSERT INTO hypotheses (batch_id, industry, niche_name, pain,
                     china_solution, why_free, llm_confidence,
-                    critic_score, critic_reasons,
+                    critic_score, critic_reasons, regulatory_risk,
                     score_total, score_breakdown, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 h.batch_id, h.industry, h.niche_name, h.pain,
                 h.china_solution, h.why_free, h.llm_confidence,
-                int(h.critic_score), h.critic_reasons or "[]",
+                int(h.critic_score), h.critic_reasons or "[]", h.regulatory_risk or "",
                 int(h.score_total), h.score_breakdown or "{}", now,
             ))
             ids.append(cur.lastrowid)
@@ -752,8 +753,10 @@ def get_hypothesis_by_id(hyp_id: int) -> Optional[dict]:
 def get_hypotheses_by_batch(batch_id: str) -> List[dict]:
     """
     Гипотезы одной пачки + подгруженные DR-чеклисты (LEFT JOIN).
-    Каждая гипотеза получает поле `deal_readiness`: None если чеклист не
-    заполнен, иначе dict с q1..q7, notes, yes_count.
+    Каждая гипотеза получает поля:
+      critic_reasons_list — распарсенный JSON
+      score_breakdown_dict — распарсенный JSON (для UI)
+      deal_readiness — None если чеклист не заполнен, иначе dict с q1..q7
     """
     with get_connection() as conn:
         rows = conn.execute(
@@ -778,6 +781,10 @@ def get_hypotheses_by_batch(batch_id: str) -> List[dict]:
                 d["critic_reasons_list"] = json.loads(d.get("critic_reasons") or "[]")
             except (json.JSONDecodeError, TypeError):
                 d["critic_reasons_list"] = []
+            try:
+                d["score_breakdown_dict"] = json.loads(d.get("score_breakdown") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                d["score_breakdown_dict"] = {}
 
             dr = dr_by_hid.get(r["id"])
             if dr:
