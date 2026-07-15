@@ -35,6 +35,7 @@ from src.pipeline.agents.supplier_audit import audit_suppliers
 from src.pipeline.agents.industry_explorer import explore_industry, INDUSTRIES
 from src.pipeline.agents.hypothesis_critic import critique_hypotheses
 from src.pipeline.agents.hypothesis_scorer import validate_and_score, recompute_with_dr
+from src.pipeline.agents.import_detector import detect_import_signals
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
 
@@ -199,6 +200,34 @@ def _filter_ago(iso_dt: Optional[str]) -> str:
 
 # ============ Pages ============
 
+def _load_latest_import_signals() -> Optional[dict]:
+    """
+    Wave 6 — читаем последний прогон Agent 0C из БД.
+    Возвращаем {batch_id, created_at, signals: [...]} или None.
+    Разбиваем сигналы по классификации для UI: hot / growing / medium / weak.
+    """
+    batch_id = db.get_latest_import_signals_batch()
+    if not batch_id:
+        return None
+    rows = db.get_import_signals_by_batch(batch_id)
+    if not rows:
+        return None
+    buckets = {"hot": [], "growing": [], "medium": [], "weak": []}
+    for r in rows:
+        buckets.setdefault(r.get("classification") or "weak", []).append(r)
+    return {
+        "batch_id": batch_id,
+        "created_at": rows[0].get("created_at", ""),
+        "period_current": rows[0].get("period_current", 0),
+        "period_prev": rows[0].get("period_prev", 0),
+        "total": len(rows),
+        "hot": buckets["hot"],
+        "growing": buckets["growing"],
+        "medium": buckets["medium"],
+        "weak": buckets["weak"],
+    }
+
+
 def _hydrate_industry_run_from_db() -> dict:
     """
     Если `_last_industry_run` пуст (после рестарта сервера) — подгружаем
@@ -289,6 +318,9 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         "industry_run": industry_run,
         # Wave 5E — список вопросов для DR-чеклиста (rendered в шаблоне)
         "dr_questions": db.DR_QUESTIONS,
+        # Wave 6 — сигналы Agent 0C (Import Detector). Подгружаем последний
+        # прогон из БД; None если детектор ещё ни разу не запускался.
+        "import_signals": _load_latest_import_signals(),
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
         # пропадали при следующих переходах/запросах. Хранится в памяти
         # процесса (см. _last_niche_run).
@@ -615,6 +647,42 @@ def explore_industry_route():
 
     flash(f"Agent 0A+0B+скоринг: {len(hypotheses)} гипотез по «{INDUSTRIES[industry_key]['label']}»", "success")
     return render_template("dashboard.html", **_dashboard_context())
+
+
+@app.route("/run-import-detector", methods=["POST"])
+def run_import_detector_route():
+    """
+    Wave 6 — Agent 0C: Import Detector.
+    Тянет статистику UN Comtrade по ~60 категориям (Китай→РФ + Китай→мир),
+    считает Δ и «специфически российский сигнал», сохраняет в БД.
+    Синхронный — прогон 10-30 сек (4 запроса к Comtrade). На фронте лоадер.
+    """
+    import uuid
+    logger.info("Agent 0C: старт детектора импорт-сигналов")
+    try:
+        signals = detect_import_signals()
+    except Exception as e:
+        logger.error(f"Agent 0C failed: {type(e).__name__}: {e}")
+        flash("Детектор упал — проверь логи. Возможно UN Comtrade недоступен.", "error")
+        return redirect(url_for("dashboard"))
+
+    if not signals:
+        flash("Детектор не получил данных из UN Comtrade (пусто)", "warning")
+        return redirect(url_for("dashboard"))
+
+    batch = uuid.uuid4().hex[:12]
+    try:
+        db.save_import_signals(signals, batch)
+    except Exception as e:
+        logger.error(f"save_import_signals failed: {type(e).__name__}: {e}")
+
+    hot = sum(1 for s in signals if s.classification == "hot")
+    growing = sum(1 for s in signals if s.classification == "growing")
+    flash(
+        f"Agent 0C: {len(signals)} категорий проверено, {hot} 🔥HOT + {growing} 🟢растущих",
+        "success",
+    )
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/run", methods=["POST"])

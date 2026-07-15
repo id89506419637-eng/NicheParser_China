@@ -354,6 +354,146 @@
 </div>
 {% endif %}
 
+<!-- 🎯 Agent 0C: Import Detector (Wave 6) -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">🎯 Детектор ниш по статистике импорта</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Agent 0C · UN Comtrade · сравниваем «Китай→РФ» с «Китай→весь мир»
+        </span>
+    </div>
+    <form id="detector-form" action="{{ url_for('run_import_detector_route') }}" method="POST"
+          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="flex:1; min-width:280px; color:#9aa0ab; font-size:12px; line-height:1.5;">
+            Прогон по 60 промышленным HS-4 категориям. Формула:
+            <strong style="color:#e8eaed;">ΔКитай→РФ − ΔКитай→мир</strong>
+            = «специфически российский» сигнал (импортозамещение / уход брендов).
+            <br>Занимает ~10-30 секунд. Обновляй раз в месяц-квартал.
+        </div>
+        <button id="detector-submit" type="submit" class="btn btn-primary">
+            <span class="btn-icon">🎯</span>
+            <span class="btn-label">
+                {% if import_signals %}Обновить{% else %}Запустить{% endif %}
+            </span>
+        </button>
+    </form>
+    <div id="detector-loader" style="display:none; align-items:center; gap:14px;
+              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🎯</span>
+        <div style="flex:1;">
+            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                Agent 0C тянет данные UN Comtrade...
+            </div>
+            <div style="color:#a5b4fc; font-size:12px; margin-top:2px;">
+                4 запроса × 60 категорий. Обычно 10-30 секунд.
+            </div>
+        </div>
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+</div>
+
+{# Результаты Agent 0C — макрос для карточки одного сигнала #}
+{% macro signal_card(s, idx) %}
+    {% set cls = s.classification %}
+    {% if cls == 'hot' %}
+        {% set color = '#f87171' %}{% set bg = 'rgba(248,113,113,0.10)' %}{% set label = '🔥 RU-спец' %}
+    {% elif cls == 'growing' %}
+        {% set color = '#34d399' %}{% set bg = 'rgba(52,211,153,0.08)' %}{% set label = '🟢 растёт' %}
+    {% elif cls == 'medium' %}
+        {% set color = '#fbbf24' %}{% set bg = 'rgba(251,191,36,0.08)' %}{% set label = '🟡 средне' %}
+    {% else %}
+        {% set color = '#6b7280' %}{% set bg = 'rgba(107,114,128,0.06)' %}{% set label = '🔴 слабо' %}
+    {% endif %}
+    <div style="margin-bottom:8px; padding:10px 14px; background:{{ bg }};
+                border:1px solid rgba(255,255,255,0.06);
+                border-left:3px solid {{ color }}; border-radius:5px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px;">
+                <span style="color:#6b7280; font-size:11px; font-family:monospace;">HS {{ s.hs_code }}</span>
+                <span style="color:#e8eaed; font-weight:600; font-size:13px; margin-left:6px;">
+                    {{ s.category_name }}
+                </span>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; font-size:11px; color:#9aa0ab;">
+                <span title="Объём китайского экспорта в РФ за {{ s.period_current }}">
+                    ${{ '%.0f'|format((s.value_current_usd or 0)/1e6) }}M
+                </span>
+                <span title="Δ Китай→РФ (последний год vs предыдущий)"
+                      style="color:{% if s.delta_ru_percent > 0 %}#34d399{% else %}#f87171{% endif %};">
+                    ΔРФ: {{ '%+.0f'|format(s.delta_ru_percent) }}%
+                </span>
+                <span title="Δ Китай→весь мир за тот же период" style="color:#9aa0ab;">
+                    ΔМир: {{ '%+.0f'|format(s.delta_world_percent) }}%
+                </span>
+                <span title="RU-специфичность в процентных пунктах: ΔРФ − ΔМир. Главный сигнал."
+                      style="font-weight:700; color:{{ color }};">
+                    спец: {{ '%+.0f'|format(s.russia_specific_pp) }}п
+                </span>
+                {% if s.ru_share_of_world >= 10 %}
+                <span title="Доля РФ в общем экспорте Китая по категории — Китай уже перестроил линии под РФ"
+                      style="padding:2px 6px; border-radius:3px;
+                             background:rgba(251,191,36,0.15); color:#fbbf24;">
+                    {{ '%.0f'|format(s.ru_share_of_world) }}% Кит.экс
+                </span>
+                {% endif %}
+                <span style="padding:2px 8px; border-radius:4px; background:{{ bg }};
+                             color:{{ color }}; font-weight:600;">{{ label }}</span>
+            </div>
+        </div>
+    </div>
+{% endmacro %}
+
+{% if import_signals %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📈 Сигналы детектора ({{ import_signals.period_prev }} → {{ import_signals.period_current }})</h2>
+        <span class="text-muted" style="font-size:12px; text-align:right;">
+            Всего: {{ import_signals.total }} ·
+            <span style="color:#f87171;">🔥 {{ import_signals.hot|length }} HOT</span> ·
+            <span style="color:#34d399;">🟢 {{ import_signals.growing|length }} растущих</span> ·
+            <span style="color:#fbbf24;">🟡 {{ import_signals.medium|length }} средних</span> ·
+            <span style="color:#6b7280;">🔴 {{ import_signals.weak|length }} слабых</span>
+            <div style="margin-top:2px; color:#6b7280;">🕐 {{ import_signals.created_at|ago }}</div>
+        </span>
+    </div>
+    <div style="padding:8px 16px 16px;">
+        {# HOT наверху развёрнуто #}
+        {% if import_signals.hot %}
+        <div style="font-size:11px; color:#f87171; text-transform:uppercase; letter-spacing:1px; margin:8px 0 6px;">
+            🔥 Специфически российские сигналы ({{ import_signals.hot|length }})
+        </div>
+        {% for s in import_signals.hot %}{{ signal_card(s, loop.index) }}{% endfor %}
+        {% endif %}
+
+        {# Растущие сразу под HOT #}
+        {% if import_signals.growing %}
+        <div style="font-size:11px; color:#34d399; text-transform:uppercase; letter-spacing:1px; margin:12px 0 6px;">
+            🟢 Растущие ({{ import_signals.growing|length }})
+        </div>
+        {% for s in import_signals.growing %}{{ signal_card(s, loop.index) }}{% endfor %}
+        {% endif %}
+
+        {# Средние и слабые в accordion, чтобы не перегружать #}
+        {% if import_signals.medium or import_signals.weak %}
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer; padding:10px 14px;
+                            background:rgba(255,255,255,0.03);
+                            border:1px solid rgba(255,255,255,0.06);
+                            border-radius:6px; color:#9aa0ab; font-size:13px;">
+                ▶ Показать остальные {{ import_signals.medium|length + import_signals.weak|length }} категорий
+                (средние + слабые)
+            </summary>
+            <div style="margin-top:10px;">
+                {% for s in import_signals.medium %}{{ signal_card(s, loop.index) }}{% endfor %}
+                {% for s in import_signals.weak %}{{ signal_card(s, loop.index) }}{% endfor %}
+            </div>
+        </details>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <script>
 (function() {
     // === Шаги пайплайна с псевдо-таймингом (секунды от старта) ===
@@ -508,6 +648,21 @@
                 btn.disabled = true;
                 var label = btn.querySelector('.btn-label');
                 if (label) label.textContent = 'Исследую...';
+            }
+            if (loader) loader.style.display = 'flex';
+        });
+    }
+
+    // === Лоадер для Agent 0C (Import Detector, Wave 6) ===
+    var detectorForm = document.getElementById('detector-form');
+    if (detectorForm) {
+        detectorForm.addEventListener('submit', function() {
+            var btn = document.getElementById('detector-submit');
+            var loader = document.getElementById('detector-loader');
+            if (btn) {
+                btn.disabled = true;
+                var label = btn.querySelector('.btn-label');
+                if (label) label.textContent = 'Тяну Comtrade...';
             }
             if (loader) loader.style.display = 'flex';
         });

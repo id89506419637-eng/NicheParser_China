@@ -199,6 +199,30 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_batch ON hypotheses(batch_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_industry ON hypotheses(industry)")
 
+        # Сигналы Agent 0C (Import Detector, Wave 6) — по HS-4 категории.
+        # Каждый прогон детектора = новый batch_id (uuid), храним историю.
+        # Не FK на что-то другое: это самостоятельный агент, гипотезы 0A/0B
+        # к нему не привязаны напрямую (пользователь переходит через кнопку).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS import_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id TEXT NOT NULL,
+                hs_code TEXT NOT NULL,
+                category_name TEXT NOT NULL,
+                value_current_usd REAL DEFAULT 0,
+                delta_ru_percent REAL DEFAULT 0,
+                delta_world_percent REAL DEFAULT 0,
+                russia_specific_pp REAL DEFAULT 0,
+                ru_share_of_world REAL DEFAULT 0,
+                classification TEXT DEFAULT '',
+                period_current INTEGER DEFAULT 0,
+                period_prev INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_signals_batch ON import_signals(batch_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_signals_specific ON import_signals(russia_specific_pp DESC)")
+
         # Deal Readiness Check (Wave 5E) — ручной чеклист по 7 вопросам
         # для каждой гипотезы перед тем как она пойдёт в полный анализ.
         cur.execute("""
@@ -875,3 +899,59 @@ def get_deal_readiness(hyp_id: int) -> Optional[dict]:
         d["yes_count"] = sum(int(d.get(k, 0)) for k, _ in DR_QUESTIONS)
         d["questions"] = DR_QUESTIONS
         return d
+
+
+# === Import Signals (Agent 0C, Wave 6) ===
+
+def save_import_signals(signals: list, batch_id: str) -> int:
+    """
+    Сохранить пачку сигналов детектора одного прогона.
+    Принимает список ImportSignal dataclass либо dict — берём поля по имени.
+    """
+    if not signals:
+        return 0
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        for s in signals:
+            get = (lambda k: getattr(s, k)) if hasattr(s, 'hs_code') else s.get
+            cur.execute("""
+                INSERT INTO import_signals (
+                    batch_id, hs_code, category_name, value_current_usd,
+                    delta_ru_percent, delta_world_percent, russia_specific_pp,
+                    ru_share_of_world, classification,
+                    period_current, period_prev, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                batch_id, get('hs_code'), get('category_name'),
+                float(get('value_current_usd')),
+                float(get('delta_ru_percent')),
+                float(get('delta_world_percent')),
+                float(get('russia_specific_pp')),
+                float(get('ru_share_of_world')),
+                get('classification'),
+                int(get('period_current')), int(get('period_prev')),
+                now,
+            ))
+        return len(signals)
+
+
+def get_latest_import_signals_batch() -> Optional[str]:
+    """Вернуть batch_id последнего прогона детектора или None если пусто."""
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT batch_id FROM import_signals
+            ORDER BY created_at DESC LIMIT 1
+        """).fetchone()
+        return row["batch_id"] if row else None
+
+
+def get_import_signals_by_batch(batch_id: str) -> list[dict]:
+    """Прочитать все сигналы одного прогона, отсортированные по russia_specific_pp DESC."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM import_signals
+            WHERE batch_id = ?
+            ORDER BY russia_specific_pp DESC
+        """, (batch_id,)).fetchall()
+        return [dict(r) for r in rows]
