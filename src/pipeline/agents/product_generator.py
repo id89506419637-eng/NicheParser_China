@@ -13,19 +13,12 @@ from typing import List, Optional
 
 import requests
 
-from core.config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL
+from core.config import (
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL,
+    OPENROUTER_FALLBACK_MODELS as _FALLBACK_MODELS,
+)
 
 logger = logging.getLogger(__name__)
-
-# Fallback-цепочка free-моделей разных провайдеров. Если один upstream
-# перегружен (429), Агент 1 идёт по списку дальше. AI_MODEL из .env пробуется
-# первым. Имена сверены с GET /api/v1/models на 2026-05.
-_FALLBACK_MODELS = [
-    "openai/gpt-oss-120b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "z-ai/glm-4.5-air:free",
-    "minimax/minimax-m2.5:free",
-]
 
 
 SYSTEM_PROMPT = (

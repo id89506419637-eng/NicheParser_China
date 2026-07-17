@@ -22,18 +22,13 @@ from typing import List, Optional, Tuple
 
 import requests
 
-from core.config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL
+from core.config import (
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL,
+    OPENROUTER_FALLBACK_MODELS as _FALLBACK_MODELS,
+)
 from core.models import Hypothesis
 
 logger = logging.getLogger(__name__)
-
-
-_FALLBACK_MODELS = [
-    "openai/gpt-oss-120b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "z-ai/glm-4.5-air:free",
-    "minimax/minimax-m2.5:free",
-]
 
 
 SYSTEM_PROMPT = (

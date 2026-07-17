@@ -29,17 +29,10 @@ import requests
 from core.config import (
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL,
     DEFAULT_MIN_MARGIN_PERCENT, DEFAULT_MIN_MARGIN_TOTAL_RUB,
+    OPENROUTER_FALLBACK_MODELS as _FALLBACK_MODELS,
 )
 
 logger = logging.getLogger(__name__)
-
-
-_FALLBACK_MODELS = [
-    "openai/gpt-oss-120b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "z-ai/glm-4.5-air:free",
-    "minimax/minimax-m2.5:free",
-]
 
 
 _VALID_VERDICTS = ("ВЕЗЁМ", "ИЗУЧИТЬ", "НЕ ВЕЗЁМ")

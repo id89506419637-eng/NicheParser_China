@@ -41,7 +41,24 @@ LOGS_DIR.mkdir(exist_ok=True)
 # === AI (OpenRouter) ===
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-AI_MODEL = os.getenv("AI_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+AI_MODEL = os.getenv("AI_MODEL", "google/gemma-4-26b-a4b-it:free")
+
+# Fallback-цепочка бесплатных моделей OpenRouter.
+# Обновлено 2026-07-16: часть старых моделей (gpt-oss-120b, glm-4.5-air,
+# minimax-m2.5) перешла в платный тариф. Живой тест показал что бесплатные
+# сильно перегружены (429), реально стабильно отвечает JSON только Gemma 4 26B.
+# Порядок: сначала Gemma 4 (стабильна), потом остальные конкретные (могут
+# быть 429 из-за rate-limit), в конце openrouter/free (авто-роутер может
+# выбрать модель "думающую вслух" — не подходит для JSON-задач).
+OPENROUTER_FALLBACK_MODELS = [
+    "google/gemma-4-26b-a4b-it:free",                 # ★ приоритет: JSON-ok, свободна
+    "google/gemma-4-31b-it:free",                     # 256K ctx
+    "qwen/qwen3-next-80b-a3b-instruct:free",          # 256K ctx, инструкции
+    "qwen/qwen3-coder:free",                          # 1M ctx, для кода/структуры
+    "nvidia/nemotron-3-super-120b-a12b:free",         # 1M ctx
+    "meta-llama/llama-3.3-70b-instruct:free",         # ветеран
+    "openrouter/free",                                # запасной автороутер
+]
 
 # === Yandex Wordstat ===
 YANDEX_OAUTH_TOKEN = os.getenv("YANDEX_OAUTH_TOKEN", "")
