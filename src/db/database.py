@@ -259,6 +259,13 @@ def init_db() -> None:
         _ensure_column(conn, "hypotheses", "score_total",     "INTEGER DEFAULT -1")
         _ensure_column(conn, "hypotheses", "score_breakdown", "TEXT DEFAULT '{}'")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_score ON hypotheses(score_total DESC)")
+        # Wave 6 расширение: 4-летний тренд импорта для стабильности сигнала
+        _ensure_column(conn, "import_signals", "history_usd",           "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "import_signals", "trend_shape",           "TEXT DEFAULT ''")
+        _ensure_column(conn, "import_signals", "trend_stability_label", "TEXT DEFAULT ''")
+        # Композитный балл для единой сортировки (класс + форма тренда + сила сигнала)
+        _ensure_column(conn, "import_signals", "composite_score",       "REAL DEFAULT 0")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_signals_composite ON import_signals(composite_score DESC)")
 
         # индексы для частых выборок
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_niche ON products(niche_id)")
@@ -914,23 +921,31 @@ def save_import_signals(signals: list, batch_id: str) -> int:
     with get_connection() as conn:
         cur = conn.cursor()
         for s in signals:
-            get = (lambda k: getattr(s, k)) if hasattr(s, 'hs_code') else s.get
+            get = (lambda k, d=None: getattr(s, k, d)) if hasattr(s, 'hs_code') else (lambda k, d=None: s.get(k, d))
+            history = get('history_usd', []) or []
             cur.execute("""
                 INSERT INTO import_signals (
                     batch_id, hs_code, category_name, value_current_usd,
                     delta_ru_percent, delta_world_percent, russia_specific_pp,
                     ru_share_of_world, classification,
-                    period_current, period_prev, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    period_current, period_prev,
+                    history_usd, trend_shape, trend_stability_label,
+                    composite_score,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 batch_id, get('hs_code'), get('category_name'),
-                float(get('value_current_usd')),
-                float(get('delta_ru_percent')),
-                float(get('delta_world_percent')),
-                float(get('russia_specific_pp')),
-                float(get('ru_share_of_world')),
-                get('classification'),
-                int(get('period_current')), int(get('period_prev')),
+                float(get('value_current_usd') or 0),
+                float(get('delta_ru_percent') or 0),
+                float(get('delta_world_percent') or 0),
+                float(get('russia_specific_pp') or 0),
+                float(get('ru_share_of_world') or 0),
+                get('classification') or '',
+                int(get('period_current') or 0), int(get('period_prev') or 0),
+                json.dumps(list(history), ensure_ascii=False),
+                get('trend_shape') or '',
+                get('trend_stability_label') or '',
+                float(get('composite_score') or 0),
                 now,
             ))
         return len(signals)
@@ -947,11 +962,20 @@ def get_latest_import_signals_batch() -> Optional[str]:
 
 
 def get_import_signals_by_batch(batch_id: str) -> list[dict]:
-    """Прочитать все сигналы одного прогона, отсортированные по russia_specific_pp DESC."""
+    """Прочитать все сигналы одного прогона, отсортированные по composite_score DESC
+    (единый рейтинг от лучшего к худшему). Распаковывает history_usd."""
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT * FROM import_signals
             WHERE batch_id = ?
-            ORDER BY russia_specific_pp DESC
+            ORDER BY composite_score DESC, russia_specific_pp DESC
         """, (batch_id,)).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["history_usd_list"] = json.loads(d.get("history_usd") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["history_usd_list"] = []
+            result.append(d)
+        return result

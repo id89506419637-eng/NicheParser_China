@@ -405,41 +405,106 @@
     {% else %}
         {% set color = '#6b7280' %}{% set bg = 'rgba(107,114,128,0.06)' %}{% set label = '🔴 слабо' %}
     {% endif %}
+    {# Форма тренда 4-летней истории — компенсирует лаг Comtrade #}
+    {% set shape = s.trend_shape or '' %}
+    {% if shape == 'stable_up' %}
+        {% set trend_color = '#34d399' %}{% set trend_bg = 'rgba(52,211,153,0.12)' %}
+    {% elif shape == 'accelerating' %}
+        {% set trend_color = '#34d399' %}{% set trend_bg = 'rgba(52,211,153,0.18)' %}
+    {% elif shape == 'hype_peak' %}
+        {% set trend_color = '#fbbf24' %}{% set trend_bg = 'rgba(251,191,36,0.15)' %}
+    {% elif shape == 'stable_down' %}
+        {% set trend_color = '#f87171' %}{% set trend_bg = 'rgba(248,113,113,0.12)' %}
+    {% elif shape == 'volatile' %}
+        {% set trend_color = '#9aa0ab' %}{% set trend_bg = 'rgba(154,160,171,0.10)' %}
+    {% else %}
+        {% set trend_color = '#6b7280' %}{% set trend_bg = 'rgba(107,114,128,0.08)' %}
+    {% endif %}
     <div style="margin-bottom:8px; padding:10px 14px; background:{{ bg }};
                 border:1px solid rgba(255,255,255,0.06);
                 border-left:3px solid {{ color }}; border-radius:5px;">
         <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-                <span style="color:#6b7280; font-size:11px; font-family:monospace;">HS {{ s.hs_code }}</span>
+                <span style="color:#e8eaed; font-weight:700; font-size:12px;
+                             padding:2px 8px; border-radius:4px;
+                             background:rgba(165,180,252,0.15); color:#a5b4fc;"
+                      title="КОМПОЗИТНЫЙ БАЛЛ 0-100 — единый рейтинг «от лучшего к худшему». Учитывает: классификацию (hot/growing/medium/weak) + форму 4-летнего тренда (stable_up/hype_peak/etc) + силу специфически российского сигнала. Формула: база_класса + бонус_за_тренд + бонус_за_спец_сигнал. По этому баллу карточки отсортированы сверху вниз.">
+                    {{ '%.0f'|format(s.composite_score or 0) }}
+                </span>
+                <span style="color:#6b7280; font-size:11px; font-family:monospace; margin-left:6px;"
+                      title="Код ТН ВЭД (Товарная Номенклатура ВЭД, 4 знака). Это КАТЕГОРИЯ товара, а не точный подкод — точный код для расчёта пошлин определяет таможенный брокер по фактическому товару. Например, HS 8482 = «подшипники», внутри есть подкоды 8482.10 (шариковые), 8482.20 (роликовые) и т.д. — каждый со своей ставкой">HS {{ s.hs_code }}</span>
                 <span style="color:#e8eaed; font-weight:600; font-size:13px; margin-left:6px;">
                     {{ s.category_name }}
                 </span>
             </div>
-            <div style="display:flex; gap:10px; align-items:center; font-size:11px; color:#9aa0ab;">
-                <span title="Объём китайского экспорта в РФ за {{ s.period_current }}">
+            <div style="display:flex; gap:10px; align-items:center; font-size:11px; color:#9aa0ab; flex-wrap:wrap;">
+                <span title="ОБЪЁМ РЫНКА: сколько долларов Китай экспортировал в РФ по этой категории за {{ s.period_current }} год. Показывает МАСШТАБ ниши: сотни миллионов — крупный рынок, десятки — узкая ниша, единицы — почти нет спроса.">
                     ${{ '%.0f'|format((s.value_current_usd or 0)/1e6) }}M
                 </span>
-                <span title="Δ Китай→РФ (последний год vs предыдущий)"
+                <span title="ΔРФ (дельта Россия): на сколько процентов вырос/упал китайский экспорт в РФ за один год ({{ s.period_prev }} → {{ s.period_current }}). Плюс = рынок растёт, минус = сжимается."
                       style="color:{% if s.delta_ru_percent > 0 %}#34d399{% else %}#f87171{% endif %};">
                     ΔРФ: {{ '%+.0f'|format(s.delta_ru_percent) }}%
                 </span>
-                <span title="Δ Китай→весь мир за тот же период" style="color:#9aa0ab;">
+                <span title="ΔМир: на сколько процентов вырос/упал китайский экспорт этого товара во ВЕСЬ мир за тот же год. Нужен для сравнения — если Китай везде растёт, это глобальный тренд, а не наша ниша." style="color:#9aa0ab;">
                     ΔМир: {{ '%+.0f'|format(s.delta_world_percent) }}%
                 </span>
-                <span title="RU-специфичность в процентных пунктах: ΔРФ − ΔМир. Главный сигнал."
+                <span title="ГЛАВНОЕ ЧИСЛО: ΔРФ минус ΔМир, в процентных пунктах. Показывает насколько ИМЕННО В РОССИИ рынок ведёт себя не как везде. Пример: если Китай в мир везёт +7%, а в РФ +29% — значит в РФ что-то происходит специфически (уход бренда, санкции, замещение). Больше 20 п.п. = сильный российский сигнал."
                       style="font-weight:700; color:{{ color }};">
                     спец: {{ '%+.0f'|format(s.russia_specific_pp) }}п
                 </span>
                 {% if s.ru_share_of_world >= 10 %}
-                <span title="Доля РФ в общем экспорте Китая по категории — Китай уже перестроил линии под РФ"
+                <span title="Доля РФ в общем экспорте Китая по этой категории. Если 10%+ — Китай уже перестроил производственные линии под российский рынок. Это значит ниша уже зрелая (обжитая), войти можно, но конкуренция среди перекупов растёт."
                       style="padding:2px 6px; border-radius:3px;
                              background:rgba(251,191,36,0.15); color:#fbbf24;">
                     {{ '%.0f'|format(s.ru_share_of_world) }}% Кит.экс
                 </span>
                 {% endif %}
-                <span style="padding:2px 8px; border-radius:4px; background:{{ bg }};
+                <span title="Классификация:
+🔥 RU-спец = сигнал специфически российский (более +20 п.п.)
+🟢 растёт = ΔРФ более +10% (в целом растёт)
+🟡 средне = держится в пределах мирового тренда
+🔴 слабо = падает сильнее мира (не наше)"
+                      style="padding:2px 8px; border-radius:4px; background:{{ bg }};
                              color:{{ color }}; font-weight:600;">{{ label }}</span>
             </div>
+        </div>
+        {# Форма 4-летнего тренда — снимает риск разового хайпа #}
+        {% if s.trend_shape %}
+        <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span title="ФОРМА ТРЕНДА за 4 года. Ключевой фильтр:
+↗↗↗ рост 3 года подряд = стабильная надёжная ниша
+⇗ ускоряется = становится всё интереснее (свежая волна)
+⚠ пик и коррекция = ХАЙП-эффект (пример: подшипники в 2023 рванули, в 2024 упали) — брать НЕ стоит
+↘↘↘ падение 3 года = категория умирает
+~ волатильно = сигнал ненадёжный, скачет"
+                  style="padding:2px 8px; border-radius:3px; font-size:11px;
+                         background:{{ trend_bg }}; color:{{ trend_color }};">
+                📈 {{ s.trend_stability_label or shape }}
+            </span>
+            {% if s.history_usd_list %}
+            <span style="font-size:10px; color:#6b7280; font-family:monospace;"
+                  title="Микро-история: объём китайского экспорта в РФ по годам, слева направо. Слева самый старый год (обычно 2021), справа самый свежий (2024). Наглядно видно форму тренда цифрами.">
+                {% for v in s.history_usd_list %}${{ '%.0f'|format((v or 0)/1e6) }}M{% if not loop.last %} → {% endif %}{% endfor %}
+            </span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {# Кнопка «Взять категорию в работу» — мост Agent 0C → Agent 0A. LLM
+           сгенерирует конкретные подниши ВНУТРИ этой HS-4 группы. #}
+        <div style="margin-top:8px;">
+            <form method="POST" action="{{ url_for('take_category_route', hs_code=s.hs_code) }}"
+                  data-category-name="{{ s.category_name }}"
+                  style="display:inline-block;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm take-category-btn"
+                        style="background:{{ bg }}; color:{{ color }};
+                               border:1px solid {{ color }}66;
+                               padding:5px 12px; border-radius:5px; cursor:pointer;
+                               font-size:11px; font-weight:600;"
+                        title="Дёрнуть LLM (Agent 0A) — он сгенерирует 15-25 конкретных подниш внутри этой HS-4 категории. Пример: HS 8708 «Части автомобилей» → «тормозные колодки для BMW/Audi», «фильтры топливные для дизелей», «пыльники ШРУС» и т.п. Каждая подниша пройдёт через Critic и скоринг.">
+                    🎯 Взять категорию в работу
+                </button>
+            </form>
         </div>
     </div>
 {% endmacro %}
@@ -449,44 +514,35 @@
     <div class="card-header">
         <h2 class="card-title">📈 Сигналы детектора ({{ import_signals.period_prev }} → {{ import_signals.period_current }})</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
-            Всего: {{ import_signals.total }} ·
-            <span style="color:#f87171;">🔥 {{ import_signals.hot|length }} HOT</span> ·
-            <span style="color:#34d399;">🟢 {{ import_signals.growing|length }} растущих</span> ·
-            <span style="color:#fbbf24;">🟡 {{ import_signals.medium|length }} средних</span> ·
-            <span style="color:#6b7280;">🔴 {{ import_signals.weak|length }} слабых</span>
+            Всего: {{ import_signals.total }} · единый рейтинг по композитному баллу ·
+            <span style="color:#f87171;">🔥 {{ import_signals.counts.hot }}</span> ·
+            <span style="color:#34d399;">🟢 {{ import_signals.counts.growing }}</span> ·
+            <span style="color:#fbbf24;">🟡 {{ import_signals.counts.medium }}</span> ·
+            <span style="color:#6b7280;">🔴 {{ import_signals.counts.weak }}</span>
             <div style="margin-top:2px; color:#6b7280;">🕐 {{ import_signals.created_at|ago }}</div>
         </span>
     </div>
     <div style="padding:8px 16px 16px;">
-        {# HOT наверху развёрнуто #}
-        {% if import_signals.hot %}
-        <div style="font-size:11px; color:#f87171; text-transform:uppercase; letter-spacing:1px; margin:8px 0 6px;">
-            🔥 Специфически российские сигналы ({{ import_signals.hot|length }})
-        </div>
-        {% for s in import_signals.hot %}{{ signal_card(s, loop.index) }}{% endfor %}
-        {% endif %}
+        {# Единый плоский рейтинг: топ-15 развёрнуто, остальные в accordion.
+           Композитный балл (composite_score) = класс + форма тренда + сила сигнала.
+           См. calc_composite_score() в import_detector.py. #}
+        {% for s in import_signals.signals[:15] %}
+            {{ signal_card(s, loop.index) }}
+        {% endfor %}
 
-        {# Растущие сразу под HOT #}
-        {% if import_signals.growing %}
-        <div style="font-size:11px; color:#34d399; text-transform:uppercase; letter-spacing:1px; margin:12px 0 6px;">
-            🟢 Растущие ({{ import_signals.growing|length }})
-        </div>
-        {% for s in import_signals.growing %}{{ signal_card(s, loop.index) }}{% endfor %}
-        {% endif %}
-
-        {# Средние и слабые в accordion, чтобы не перегружать #}
-        {% if import_signals.medium or import_signals.weak %}
+        {% if import_signals.signals|length > 15 %}
         <details style="margin-top:14px;">
             <summary style="cursor:pointer; padding:10px 14px;
                             background:rgba(255,255,255,0.03);
                             border:1px solid rgba(255,255,255,0.06);
                             border-radius:6px; color:#9aa0ab; font-size:13px;">
-                ▶ Показать остальные {{ import_signals.medium|length + import_signals.weak|length }} категорий
-                (средние + слабые)
+                ▶ Показать остальные {{ import_signals.signals|length - 15 }} категорий
+                (балл ниже топ-15)
             </summary>
             <div style="margin-top:10px;">
-                {% for s in import_signals.medium %}{{ signal_card(s, loop.index) }}{% endfor %}
-                {% for s in import_signals.weak %}{{ signal_card(s, loop.index) }}{% endfor %}
+                {% for s in import_signals.signals[15:] %}
+                    {{ signal_card(s, loop.index + 15) }}
+                {% endfor %}
             </div>
         </details>
         {% endif %}
@@ -667,6 +723,28 @@
             if (loader) loader.style.display = 'flex';
         });
     }
+
+    // === Кнопки «Взять категорию в работу» на карточках сигналов (мост 0C → 0A) ===
+    // Отключаем кнопку и меняем текст на «Генерирую...» на время запроса.
+    // Лоадер индустрии переиспользуем — он и так показывает «Agent 0A исследует...».
+    document.querySelectorAll('form[action*="/take-category/"]').forEach(function(form) {
+        form.addEventListener('submit', function() {
+            var btn = form.querySelector('button');
+            var cat = form.dataset.categoryName || 'категория';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Генерирую подниши...';
+            }
+            // Показать общий industry-loader если он есть — переиспользуем UX
+            var loader = document.getElementById('industry-loader');
+            var name = document.getElementById('industry-loader-name');
+            if (name) name.textContent = '«' + cat + '»';
+            if (loader) {
+                loader.style.display = 'flex';
+                loader.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    });
 })();
 </script>
 

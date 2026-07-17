@@ -23,18 +23,13 @@ from typing import List, Optional, Tuple
 
 import requests
 
-from core.config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL
+from core.config import (
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL, AI_MODEL,
+    OPENROUTER_FALLBACK_MODELS as _FALLBACK_MODELS,
+)
 from core.models import Hypothesis
 
 logger = logging.getLogger(__name__)
-
-
-_FALLBACK_MODELS = [
-    "openai/gpt-oss-120b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "z-ai/glm-4.5-air:free",
-    "minimax/minimax-m2.5:free",
-]
 
 _VALID_CONFIDENCES = ("высокая", "средняя", "низкая")
 
@@ -159,6 +154,169 @@ def explore_industry(industry_key: str) -> Tuple[List[Hypothesis], str, str]:
 
     logger.error(f"Agent 0A: все модели упали ({last_error})")
     return [], batch_id, "error"
+
+
+def explore_hs_category(
+    hs_code: str, category_name: str, market_context: Optional[str] = None,
+) -> Tuple[List[Hypothesis], str, str]:
+    """
+    Мост Agent 0C → Agent 0A: LLM генерирует конкретные подниши внутри
+    HS-4 категории, отобранной детектором импорта.
+
+    В отличие от explore_industry(), здесь мы даём промпту:
+      - конкретный код ТН ВЭД (для контекста, НЕ для расчёта пошлин!)
+      - название категории
+      - опциональный контекст рынка (например «импорт из Китая вырос на 29%»)
+
+    LLM должен предложить 15-25 конкретных подтипов товаров ВНУТРИ этой
+    группы (не всю индустрию, а именно узкие подкатегории).
+
+    Пример: HS 8708 «Части автомобилей» → LLM выдаёт «тормозные колодки
+    для BMW/Audi после ухода бренда», «фильтры топливные для дизелей»,
+    «пыльники ШРУС», «сенсоры парктроников с камерой» — это разные
+    подтипы внутри одной HS-группы.
+
+    industry_key в сохранении = "hs-XXXX" (например "hs-8708"), чтобы
+    отличать от классических гипотез Agent 0A.
+    """
+    if not OPENROUTER_API_KEY:
+        logger.warning("Agent 0A/HS: нет OPENROUTER_API_KEY")
+        return [], "", "error"
+
+    industry_key = f"hs-{hs_code}"
+    batch_id = uuid.uuid4().hex[:12]
+    now = datetime.now().isoformat()
+
+    # Синтетическая meta — совместимо с _build_prompt-подобной логикой
+    meta = {
+        "label": f"{category_name} (HS {hs_code})",
+        "hs_code": hs_code,
+        "category_name": category_name,
+        "market_context": market_context or "",
+    }
+
+    seen = set()
+    chain: List[str] = []
+    for m in [AI_MODEL] + _FALLBACK_MODELS:
+        if m and m not in seen:
+            seen.add(m)
+            chain.append(m)
+
+    last_error = ""
+    for model in chain:
+        raw_hypotheses, err = _try_hs_one_model(model, meta)
+        if raw_hypotheses is not None:
+            hyps = _normalize(raw_hypotheses, industry_key, batch_id, now)
+            logger.info(f"Agent 0A/HS: {len(hyps)} гипотез по '{industry_key}' через {model}")
+            return hyps, batch_id, "llm"
+        last_error = err
+        logger.warning(f"Agent 0A/HS: модель {model} не сработала ({err}) — пробую следующую")
+
+    logger.error(f"Agent 0A/HS: все модели упали ({last_error})")
+    return [], batch_id, "error"
+
+
+def _build_hs_prompt(meta: dict) -> str:
+    ctx_line = ""
+    if meta.get("market_context"):
+        ctx_line = f"\nКонтекст рынка (из детектора импорта):\n{meta['market_context']}\n"
+    return f"""Товарная группа ТН ВЭД: **HS {meta['hs_code']} — {meta['category_name']}**
+{ctx_line}
+Эта группа была отобрана статистическим детектором импорта Agent 0C — Китай
+активно ввозит товары этой группы в РФ, есть растущий рынок.
+
+ЗАДАЧА: сгенерируй 15-25 конкретных ПОДТИПОВ товаров ВНУТРИ этой группы,
+которые:
+  • относятся к HS {meta['hs_code']} по классификации (но узкие подкатегории,
+    не «все части автомобилей», а «тормозные колодки для BMW/Audi»)
+  • массово производятся в Китае (есть на Alibaba)
+  • пользуются спросом в РФ (замещение ушедших брендов, ремонт, малый бизнес)
+  • реально ПРОДАЮТСЯ через объявления (Авито, специализированные площадки)
+
+Каждый подтип = РАЗНАЯ модификация/применение, не разные бренды одного и
+того же товара.
+
+ВАЖНО ПРО КОД ТН ВЭД: точный подкод (типа {meta['hs_code']}10001 vs {meta['hs_code']}20009)
+определяет таможенный брокер по факту товара. Ты работаешь на уровне
+названий подтипов, не пытайся выдавать точные подкоды — это НЕ твоя задача.
+
+Формат каждой гипотезы:
+- niche_name: конкретный подтип товара, 3-6 слов (пример: «Тормозные колодки
+  керамические для премиум-авто»)
+- pain: какая боль потребителя решается в 1-2 предложения (пример: «После
+  ухода Brembo/ATE оригинальные колодки стоят 15-30к, аналогов на Авито мало»)
+- china_solution: что есть в Китае + диапазон цен в $ (пример: «Китайские
+  фабрики выпускают керамику класса OEM от $8/шт при заказе 100+»)
+- why_free: почему подтип свободен (пример: «Дилеры возят только под заказ,
+  розничного канала нет, на Авито 5-10 объявлений от перекупов»)
+- llm_confidence: «высокая» / «средняя» / «низкая»
+
+llm_confidence ставь честно:
+  высокая — знаешь конкретно об этой нише в РФ и подтвердил бы факты
+  средняя — гипотеза правдоподобная, требует проверки
+  низкая — интуитивно, могу ошибаться
+
+Верни СТРОГО JSON:
+{{
+  "niches": [
+    {{
+      "niche_name": "...",
+      "pain": "...",
+      "china_solution": "...",
+      "why_free": "...",
+      "llm_confidence": "средняя"
+    }},
+    ...
+  ]
+}}
+Без пояснений снаружи JSON. Без ```. Только объект.
+"""
+
+
+def _try_hs_one_model(model: str, meta: dict) -> Tuple[Optional[List[dict]], str]:
+    """LLM-запрос для explore_hs_category. Возвращает (список сырых гипотез, error_msg)."""
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": (
+                "Ты — эксперт по ВЭД и анализу B2B-ниш для импорта из Китая в РФ в 2026. "
+                "Работаешь на уровне товарных подкатегорий внутри HS-группы, не на уровне брендов. "
+                "Отвечаешь СТРОГО в формате JSON, без пояснений снаружи."
+            )},
+            {"role": "user", "content": _build_hs_prompt(meta)},
+        ],
+        "temperature": 0.6,
+        "max_tokens": 4000,
+    }
+    try:
+        resp = requests.post(
+            f"{OPENROUTER_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://nicheparser.local",
+                "X-Title": "NicheParser_China",
+            },
+            json=payload, timeout=90,
+        )
+    except Exception as e:
+        return None, f"network: {e}"
+
+    if resp.status_code == 429:
+        return None, "rate-limited upstream (429)"
+    if resp.status_code != 200:
+        return None, f"HTTP {resp.status_code}: {resp.text[:200]}"
+
+    try:
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+    except Exception as e:
+        return None, f"bad response shape: {e}"
+
+    parsed = _parse_json_block(content)
+    if parsed is None or not isinstance(parsed.get("niches"), list):
+        return None, f"не JSON или нет niches: {content[:120]}"
+    return parsed["niches"], ""
 
 
 # ============ LLM-путь ============

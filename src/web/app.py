@@ -32,7 +32,7 @@ from src.pipeline.agents.avito_finder import find_on_avito
 from src.pipeline.agents.ved_runner import run_ved
 from src.pipeline.agents.verdict_agent import issue_verdicts
 from src.pipeline.agents.supplier_audit import audit_suppliers
-from src.pipeline.agents.industry_explorer import explore_industry, INDUSTRIES
+from src.pipeline.agents.industry_explorer import explore_industry, explore_hs_category, INDUSTRIES
 from src.pipeline.agents.hypothesis_critic import critique_hypotheses
 from src.pipeline.agents.hypothesis_scorer import validate_and_score, recompute_with_dr
 from src.pipeline.agents.import_detector import detect_import_signals
@@ -203,8 +203,9 @@ def _filter_ago(iso_dt: Optional[str]) -> str:
 def _load_latest_import_signals() -> Optional[dict]:
     """
     Wave 6 — читаем последний прогон Agent 0C из БД.
-    Возвращаем {batch_id, created_at, signals: [...]} или None.
-    Разбиваем сигналы по классификации для UI: hot / growing / medium / weak.
+    Возвращаем ПЛОСКИЙ список сигналов, отсортированных по composite_score DESC.
+    Классификация hot/growing/medium/weak остаётся как цветной бейдж каждого
+    сигнала, но группировка убрана — единый рейтинг «от лучшего к худшему».
     """
     batch_id = db.get_latest_import_signals_batch()
     if not batch_id:
@@ -212,19 +213,18 @@ def _load_latest_import_signals() -> Optional[dict]:
     rows = db.get_import_signals_by_batch(batch_id)
     if not rows:
         return None
-    buckets = {"hot": [], "growing": [], "medium": [], "weak": []}
+    # Счётчики для заголовка блока — цветовая сводка сверху
+    counts = {"hot": 0, "growing": 0, "medium": 0, "weak": 0}
     for r in rows:
-        buckets.setdefault(r.get("classification") or "weak", []).append(r)
+        counts[r.get("classification") or "weak"] = counts.get(r.get("classification") or "weak", 0) + 1
     return {
         "batch_id": batch_id,
         "created_at": rows[0].get("created_at", ""),
         "period_current": rows[0].get("period_current", 0),
         "period_prev": rows[0].get("period_prev", 0),
         "total": len(rows),
-        "hot": buckets["hot"],
-        "growing": buckets["growing"],
-        "medium": buckets["medium"],
-        "weak": buckets["weak"],
+        "signals": rows,           # плоский рейтинг, уже отсортирован
+        "counts": counts,          # {hot: N, growing: N, medium: N, weak: N} — для заголовка
     }
 
 
@@ -680,6 +680,98 @@ def run_import_detector_route():
     growing = sum(1 for s in signals if s.classification == "growing")
     flash(
         f"Agent 0C: {len(signals)} категорий проверено, {hot} 🔥HOT + {growing} 🟢растущих",
+        "success",
+    )
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/take-category/<hs_code>", methods=["POST"])
+def take_category_route(hs_code: str):
+    """
+    Wave 6 — мост Agent 0C → Agent 0A.
+    Пользователь нажал «Взять категорию в работу» на карточке сигнала.
+    Дёргаем explore_hs_category(), который просит LLM сгенерировать
+    конкретные подниши ВНУТРИ выбранной HS-4 категории (не всей индустрии,
+    а именно подтипов товаров в группе).
+
+    Название категории и контекст рынка берём из последнего batch'а
+    Agent 0C в БД — сигнал должен там быть.
+    """
+    hs_code = (hs_code or "").strip()
+    if not hs_code:
+        flash("Не указан HS-код категории", "error")
+        return redirect(url_for("dashboard"))
+
+    latest_batch = db.get_latest_import_signals_batch()
+    if not latest_batch:
+        flash("Нет свежего прогона детектора — сначала запусти его", "warning")
+        return redirect(url_for("dashboard"))
+
+    signals = db.get_import_signals_by_batch(latest_batch)
+    signal = next((s for s in signals if s.get("hs_code") == hs_code), None)
+    if not signal:
+        flash(f"Категория HS {hs_code} не найдена в последнем прогоне", "error")
+        return redirect(url_for("dashboard"))
+
+    category_name = signal.get("category_name") or f"HS {hs_code}"
+    # Дадим LLM короткий контекст сигнала — растёт / стабильно / хайп
+    context_parts = [
+        f"Китайский экспорт в РФ за {signal.get('period_current')}: "
+        f"${(signal.get('value_current_usd') or 0)/1e6:.0f}M",
+        f"ΔРФ={signal.get('delta_ru_percent'):+.0f}%, "
+        f"ΔМир={signal.get('delta_world_percent'):+.0f}%, "
+        f"специфически-российский сигнал {signal.get('russia_specific_pp'):+.0f} п.п.",
+    ]
+    if signal.get("trend_stability_label"):
+        context_parts.append(f"Форма 4-летнего тренда: {signal['trend_stability_label']}")
+    market_context = "\n".join(context_parts)
+
+    logger.info(f"/take-category: HS {hs_code} ({category_name}) → Agent 0A")
+    hypotheses, batch_id, source = explore_hs_category(hs_code, category_name, market_context)
+
+    if source != "llm" or not hypotheses:
+        flash(f"LLM не смог сгенерировать подниши для HS {hs_code}", "error")
+        return redirect(url_for("dashboard"))
+
+    # Agent 0B (Critic) + Wave 5C scoring — как в обычном explore_industry_route
+    try:
+        critique_hypotheses(hypotheses)
+    except Exception as e:
+        logger.error(f"Agent 0B failed: {type(e).__name__}: {e}")
+    try:
+        validate_and_score(hypotheses)
+    except Exception as e:
+        logger.error(f"validate_and_score failed: {type(e).__name__}: {e}")
+
+    hyp_ids: list = []
+    try:
+        hyp_ids = db.save_hypotheses(hypotheses)
+    except Exception as e:
+        logger.error(f"save_hypotheses failed: {type(e).__name__}: {e}")
+
+    industry_key = f"hs-{hs_code}"
+    _last_industry_run["industry"] = industry_key
+    _last_industry_run["industry_label"] = f"{category_name} (HS {hs_code})"
+    _last_industry_run["hypotheses"] = [
+        {
+            "id": hyp_ids[i] if i < len(hyp_ids) else None,
+            "niche_name": h.niche_name, "pain": h.pain,
+            "china_solution": h.china_solution, "why_free": h.why_free,
+            "llm_confidence": h.llm_confidence,
+            "critic_score": h.critic_score,
+            "critic_reasons": json.loads(h.critic_reasons or "[]"),
+            "regulatory_risk": h.regulatory_risk or "",
+            "score_total": h.score_total,
+            "score_breakdown": json.loads(h.score_breakdown or "{}"),
+            "deal_readiness": None,
+        }
+        for i, h in enumerate(hypotheses)
+    ]
+    _last_industry_run["batch_id"] = batch_id
+    _last_industry_run["finished_at"] = datetime.now().isoformat()
+
+    flash(
+        f"Agent 0A по HS {hs_code} «{category_name}»: {len(hypotheses)} подниш сгенерировано",
         "success",
     )
     return redirect(url_for("dashboard"))

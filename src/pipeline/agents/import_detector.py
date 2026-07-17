@@ -132,6 +132,13 @@ class ImportSignal:
     classification: str = ""            # "hot" | "growing" | "medium" | "weak"
     period_current: int = 0             # год, за который свежие данные
     period_prev: int = 0                # год, с которым сравниваем
+    # 4-летний тренд (2021→2024) — компенсирует лаг Comtrade
+    history_usd: list = field(default_factory=list)  # [v_year-3, v_year-2, v_year-1, v_year]
+    trend_shape: str = ""               # "stable_up" | "accelerating" | "hype_peak" | "stable_down" | "volatile" | "flat"
+    trend_stability_label: str = ""     # человекочитаемое описание для UI
+    # Композитный балл 0-100 — по нему единая сортировка «от лучшего к худшему».
+    # Учитывает классификацию + форму 4-летнего тренда + силу спец-сигнала.
+    composite_score: float = 0.0
 
 
 def classify_signal(delta_ru: float, delta_world: float) -> str:
@@ -147,6 +154,84 @@ def classify_signal(delta_ru: float, delta_world: float) -> str:
     if spec > -5:
         return "medium"     # 🟡 держится в пределах мирового тренда
     return "weak"           # 🔴 падает сильнее мира
+
+
+def calc_composite_score(
+    classification: str,
+    trend_shape: str,
+    russia_specific_pp: float,
+) -> float:
+    """
+    Композитный балл 0-100 — единая сортировка «от лучшего к худшему».
+    Учитывает 3 фактора:
+      1. Классификация (базовый балл): hot=55, growing=35, medium=18, weak=0
+      2. Форма 4-летнего тренда (модификатор):
+         stable_up=+25, accelerating=+30, hype_peak=−20, stable_down=−15,
+         volatile=−8, flat/unknown=0
+      3. Сила спец-сигнала (бонус до +20): min(spec_pp / 3, 20)
+    Итог: clamp(base + trend_mod + spec_bonus, 0, 100)
+    """
+    base_by_cls = {"hot": 55, "growing": 35, "medium": 18, "weak": 0}
+    trend_mod_by_shape = {
+        "stable_up": 25, "accelerating": 30,
+        "hype_peak": -20, "stable_down": -15,
+        "volatile": -8, "flat": 0, "unknown": 0,
+    }
+    base = base_by_cls.get(classification, 0)
+    trend_mod = trend_mod_by_shape.get(trend_shape, 0)
+    # Бонус за силу «специфически российского» сигнала (только положительная часть).
+    spec_bonus = max(0.0, min(russia_specific_pp / 3.0, 20.0))
+    score = base + trend_mod + spec_bonus
+    return max(0.0, min(100.0, round(score, 1)))
+
+
+def classify_trend_shape(history: list[float]) -> tuple[str, str]:
+    """
+    Форма 4-летнего тренда — компенсирует лаг Comtrade.
+    Идея: одногодичный скачок часто хайп-эффект (пример: подшипники 2023).
+    Стабильный многолетний рост надёжнее одиночного пика.
+
+    history: список из 4 значений [v-3, v-2, v-1, v] (USD).
+    Возвращает (shape_code, human_label).
+    """
+    if not history or len(history) < 4 or history[0] <= 0:
+        return "unknown", "нет истории"
+
+    v = history
+    # Годовые дельты в процентах (3 перехода на 4 точки)
+    d1 = (v[1] - v[0]) / v[0] * 100 if v[0] > 0 else 0
+    d2 = (v[2] - v[1]) / v[1] * 100 if v[1] > 0 else 0
+    d3 = (v[3] - v[2]) / v[2] * 100 if v[2] > 0 else 0
+
+    # Общий рост за весь период (v-3 → v)
+    total = (v[3] - v[0]) / v[0] * 100 if v[0] > 0 else 0
+
+    # 1. Стабильный рост 3 года подряд
+    if d1 > 0 and d2 > 0 and d3 > 0:
+        return "stable_up", f"↗↗↗ рост 3 года подряд ({total:+.0f}%)"
+
+    # 2. Ускорение: каждый год всё круче
+    if 0 < d1 < d2 < d3 and d3 > 20:
+        return "accelerating", f"⇗ ускоряется (последний год +{d3:.0f}%)"
+
+    # 3. Хайп-пик посередине: рост-рост-падение (наш случай с подшипниками)
+    if d1 > 20 and d2 > 20 and d3 < -10:
+        return "hype_peak", f"⚠ пик и коррекция (v-1 → v: {d3:+.0f}%)"
+
+    # 4. Стабильное падение
+    if d1 < 0 and d2 < 0 and d3 < 0:
+        return "stable_down", f"↘↘↘ падение 3 года подряд ({total:+.0f}%)"
+
+    # 5. Свежий разворот вниз после многолетнего роста
+    if d1 > 0 and d2 > 0 and d3 < -10:
+        return "hype_peak", f"⚠ рост оборвался (v-1 → v: {d3:+.0f}%)"
+
+    # 6. Разворот вверх после падения — свежая ниша
+    if d1 < 0 and d2 < 0 and d3 > 20:
+        return "stable_up", f"↗ восстановление (последний год +{d3:.0f}%)"
+
+    # 7. Всё остальное — волатильно (нестабильный сигнал)
+    return "volatile", f"~ волатильно ({d1:+.0f}/{d2:+.0f}/{d3:+.0f}%)"
 
 
 def _fetch_year(partner_code: str, year: int, cmd_codes: str) -> dict[str, float]:
@@ -178,32 +263,45 @@ def _fetch_year(partner_code: str, year: int, cmd_codes: str) -> dict[str, float
 def detect_import_signals(
     categories: Optional[dict[str, str]] = None,
     period_current: int = 2024,
-    period_prev: int = 2023,
+    history_years: int = 4,
 ) -> list[ImportSignal]:
     """
     Главная функция агента: тянет статистику, считает сигналы, сортирует.
     Возвращает список ImportSignal, отсортированный по russia_specific_pp
     убывающе (топ-«специфически российских» вверху).
 
-    По умолчанию сравниваем 2023 vs 2024 — самые свежие полные годы.
-    Данные за 2025 появятся в UN Comtrade ближе к концу 2026.
+    По умолчанию:
+      period_current = 2024 (самые свежие полные годы UN Comtrade)
+      history_years  = 4  — для оценки стабильности тренда 2021→2024
     """
     cats = categories or CATEGORIES
     if not cats:
         return []
 
     cmd_str = ','.join(cats.keys())
-    logger.info(f"Agent 0C: детектор запущен по {len(cats)} категориям, {period_prev} vs {period_current}")
+    period_prev = period_current - 1
+    history_start = period_current - history_years + 1  # 2021 при default
+    years = list(range(history_start, period_current + 1))
 
-    ru_curr = _fetch_year('643', period_current, cmd_str)
-    ru_prev = _fetch_year('643', period_prev, cmd_str)
-    w_curr  = _fetch_year('0',   period_current, cmd_str)
-    w_prev  = _fetch_year('0',   period_prev, cmd_str)
+    logger.info(
+        f"Agent 0C: детектор по {len(cats)} категориям, "
+        f"история {history_start}..{period_current}"
+    )
+
+    # RU за все годы истории (для 4-летнего тренда)
+    ru_by_year: dict[int, dict[str, float]] = {}
+    for y in years:
+        ru_by_year[y] = _fetch_year('643', y, cmd_str)
+
+    # World только для текущего и предыдущего (для кросс-чека)
+    w_curr = _fetch_year('0', period_current, cmd_str)
+    w_prev = _fetch_year('0', period_prev, cmd_str)
 
     signals: list[ImportSignal] = []
     for code, name in cats.items():
-        rc = float(ru_curr.get(code, 0))
-        rp = float(ru_prev.get(code, 0))
+        history = [float(ru_by_year[y].get(code, 0)) for y in years]
+        rc = history[-1]
+        rp = history[-2] if len(history) >= 2 else 0.0
         wc = float(w_curr.get(code, 0))
         wp = float(w_prev.get(code, 0))
 
@@ -211,6 +309,9 @@ def detect_import_signals(
         d_w  = (wc - wp) / wp * 100 if wp > 0 else 0.0
         spec = d_ru - d_w
         share = (rc / wc * 100) if wc > 0 else 0.0
+        cls = classify_signal(d_ru, d_w)
+        shape, label = classify_trend_shape(history)
+        composite = calc_composite_score(cls, shape, spec)
 
         signals.append(ImportSignal(
             hs_code=code,
@@ -220,13 +321,24 @@ def detect_import_signals(
             delta_world_percent=round(d_w, 1),
             russia_specific_pp=round(spec, 1),
             ru_share_of_world=round(share, 2),
-            classification=classify_signal(d_ru, d_w),
+            classification=cls,
             period_current=period_current,
             period_prev=period_prev,
+            history_usd=[round(v, 0) for v in history],
+            trend_shape=shape,
+            trend_stability_label=label,
+            composite_score=composite,
         ))
 
-    signals.sort(key=lambda s: -s.russia_specific_pp)
+    # Единый рейтинг: от лучшего к худшему по композитному баллу.
+    signals.sort(key=lambda s: -s.composite_score)
     hot = sum(1 for s in signals if s.classification == "hot")
     growing = sum(1 for s in signals if s.classification == "growing")
-    logger.info(f"Agent 0C: получено {len(signals)} сигналов, из них {hot} 🔥HOT + {growing} 🟢растущих")
+    hype = sum(1 for s in signals if s.trend_shape == "hype_peak")
+    stable_up = sum(1 for s in signals if s.trend_shape == "stable_up")
+    top_score = signals[0].composite_score if signals else 0
+    logger.info(
+        f"Agent 0C: {len(signals)} сигналов: {hot} 🔥HOT + {growing} 🟢растущих, "
+        f"из них {stable_up} stable_up, {hype} hype_peak. Топ композит: {top_score}"
+    )
     return signals
