@@ -90,8 +90,24 @@ def get_connection():
         conn.close()
 
 
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
 def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
-    """Идемпотентный ADD COLUMN: проверяем PRAGMA, добавляем только если нет."""
+    """
+    Идемпотентный ADD COLUMN. SQLite не поддерживает параметризацию для имён
+    таблиц/колонок/DDL — только для значений. Поэтому валидируем аргументы
+    как SQL-идентификаторы и запрещаем в DDL комментарии/точки с запятой.
+    Сейчас все вызовы делаются с захардкоженными литералами, но валидация
+    ловит регрессию если аргумент когда-нибудь станет производным от ввода.
+    """
+    if not _IDENT_RE.match(table):
+        raise ValueError(f"Небезопасное имя таблицы: {table!r}")
+    if not _IDENT_RE.match(column):
+        raise ValueError(f"Небезопасное имя колонки: {column!r}")
+    if any(bad in ddl for bad in ("--", ";", "/*", "*/")):
+        raise ValueError(f"Подозрительный DDL (комментарии/;): {ddl!r}")
+
     existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
