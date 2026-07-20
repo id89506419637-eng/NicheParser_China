@@ -246,6 +246,25 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tenders_batch ON tender_signals(batch_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tenders_import ON tender_signals(import_batch_id, hs_code)")
 
+        # Product outcomes (Wave-6 UX) — ручной фидбек пользователя по товару
+        # после реальной сделки. Даёт обратную связь для калибровки скоринга.
+        # Одна запись на product_id (последний статус выигрывает).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS product_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'idle',
+                    -- idle | in_progress | success | failed | skipped
+                notes TEXT DEFAULT '',
+                actual_margin_percent REAL DEFAULT 0,
+                actual_profit_rub REAL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_status ON product_outcomes(status)")
+
         # Deal Readiness Check (Wave 5E) — ручной чеклист по 7 вопросам
         # для каждой гипотезы перед тем как она пойдёт в полный анализ.
         cur.execute("""
@@ -1037,6 +1056,54 @@ def save_tender_signals(signals: list, batch_id: str, import_batch_id: str = "")
                 get('fetched_at') or datetime.now().isoformat(),
             ))
         return len(signals)
+
+
+def save_product_outcome(
+    product_id: int,
+    status: str,
+    notes: str = "",
+    actual_margin_percent: float = 0.0,
+    actual_profit_rub: float = 0.0,
+) -> None:
+    """
+    Сохранить/обновить фидбек пользователя по товару (Wave-6 UX).
+    status ∈ {'idle', 'in_progress', 'success', 'failed', 'skipped'}.
+    UPSERT — одна запись на product_id.
+    """
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO product_outcomes (
+                product_id, status, notes, actual_margin_percent, actual_profit_rub,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(product_id) DO UPDATE SET
+                status = excluded.status,
+                notes = excluded.notes,
+                actual_margin_percent = excluded.actual_margin_percent,
+                actual_profit_rub = excluded.actual_profit_rub,
+                updated_at = excluded.updated_at
+        """, (product_id, status, notes, actual_margin_percent,
+              actual_profit_rub, now, now))
+        conn.commit()
+
+
+def get_product_outcomes_map() -> dict[int, dict]:
+    """Все outcomes одним запросом — {product_id: outcome_dict}. Для дашборда."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM product_outcomes").fetchall()
+        return {int(r["product_id"]): dict(r) for r in rows}
+
+
+def get_product_outcome(product_id: int) -> Optional[dict]:
+    """Один outcome по product_id, если есть."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM product_outcomes WHERE product_id = ?",
+            (product_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_tender_signals_for_import_batch(import_batch_id: str) -> dict[str, dict]:

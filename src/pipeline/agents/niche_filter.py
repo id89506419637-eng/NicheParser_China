@@ -38,7 +38,14 @@ def _build_prompt(products: List[dict]) -> str:
     for i, p in enumerate(products):
         title = p.get("title_ru") or p.get("title_en") or "?"
         freq = p.get("frequency", 0)
-        lines.append(f"{i}. {title} — {freq} запр/мес")
+        freq_c = p.get("frequency_commercial", 0)
+        # Показываем LLM оба числа: инфо и коммерческий. Для B2B решения
+        # важнее коммерческий (реальные покупатели), инфо может ввести
+        # в заблуждение (много запросов = много «посмотреть картинки»).
+        if freq_c and freq_c != freq:
+            lines.append(f"{i}. {title} — {freq} запр/мес всего, из них {freq_c} коммерческих (купить/оптом/цена)")
+        else:
+            lines.append(f"{i}. {title} — {freq} запр/мес")
     products_block = "\n".join(lines)
 
     return f"""Список товаров-гипотез:

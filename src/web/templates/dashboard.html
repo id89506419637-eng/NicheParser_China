@@ -79,6 +79,131 @@
     </div>
 </details>
 
+{# ─── Статус источников данных: mock / реальный / LLM — для честности ─── #}
+{% if data_sources %}
+{% set ds = data_sources %}
+{% set mock_count = (0 if ds.wordstat_is_real else 1) + (0 if ds.alibaba_is_real else 1) + (0 if ds.avito_is_real else 1) %}
+<details style="margin-bottom:14px; padding:10px 16px;
+        background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06);
+        border-radius:8px;">
+    <summary style="cursor:pointer; font-weight:600; font-size:13px; color:#e8eaed;
+                    display:flex; align-items:center; gap:10px;">
+        <span style="font-size:16px;">🚦</span>
+        Статус источников данных
+        {% if mock_count > 0 %}
+        <span style="padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;
+                     background:rgba(251,191,36,0.15); color:#fbbf24;">
+            ⚠ {{ mock_count }} из 3 источников на mock
+        </span>
+        {% else %}
+        <span style="padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;
+                     background:rgba(52,211,153,0.15); color:#34d399;">
+            ✅ все источники реальные
+        </span>
+        {% endif %}
+        <span style="font-size:11px; color:#6b7280; font-weight:400; margin-left:auto;">
+            откуда какие цифры — важно понимать чему верить
+        </span>
+    </summary>
+    <div style="margin-top:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:8px;">
+
+        {# — Wordstat — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid {% if ds.wordstat_is_real %}#34d399{% else %}#fbbf24{% endif %};">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                {% if ds.wordstat_is_real %}📊{% else %}⚠️{% endif %} Wordstat (спрос)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                {% if ds.wordstat_is_real %}
+                    Реальный Яндекс.Директ API
+                {% else %}
+                    <strong style="color:#fbbf24;">Mock</strong> — детерминированные числа
+                    от хеша запроса. Нужен Яндекс Директ OAuth-токен.
+                {% endif %}
+            </div>
+        </div>
+
+        {# — Alibaba — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid {% if ds.alibaba_is_real %}#34d399{% else %}#fbbf24{% endif %};">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                {% if ds.alibaba_is_real %}📊{% else %}⚠️{% endif %} Alibaba (цены КНР)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                {% if ds.alibaba_is_real %}
+                    Реальный скрапинг Playwright (нестабильно)
+                {% else %}
+                    <strong style="color:#fbbf24;">Mock</strong> — правдоподобные,
+                    но выдуманные офферы. Смена на реальный: <code>USE_MOCK_ALIBABA=0</code>.
+                {% endif %}
+            </div>
+        </div>
+
+        {# — Авито — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid {% if ds.avito_is_real %}#34d399{% else %}#fbbf24{% endif %};">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                {% if ds.avito_is_real %}📊{% else %}⚠️{% endif %} Авито (цены РФ)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                {% if ds.avito_is_real %}
+                    Реальный скрапинг Playwright
+                {% else %}
+                    <strong style="color:#fbbf24;">Mock</strong> — выдуманные объявления.
+                    Смена: <code>USE_MOCK_AVITO=0</code>.
+                {% endif %}
+            </div>
+        </div>
+
+        {# — Comtrade — всегда реальный, если запущен — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid #34d399;">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                📊 UN Comtrade (Детектор импорта)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                Всегда реальный API (public preview, лаг данных 6-12 мес).
+            </div>
+        </div>
+
+        {# — zakupki — всегда реальный — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid #34d399;">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                📊 zakupki.gov.ru (Тендеры)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                Реальный HTML-скрапинг веб-поиска (нужен split-tunnel VPN).
+            </div>
+        </div>
+
+        {# — LLM — #}
+        <div style="padding:8px 10px; background:rgba(0,0,0,0.15); border-radius:5px;
+                    border-left:3px solid {% if ds.llm_available %}#a5b4fc{% else %}#f87171{% endif %};">
+            <div style="font-size:12px; font-weight:600; color:#e8eaed;">
+                🤖 LLM (гипотезы, вердикты, фильтр)
+            </div>
+            <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                {% if ds.llm_available %}
+                    OpenRouter free tier (нестабильно, есть fallback-цепочка)
+                {% else %}
+                    <strong style="color:#f87171;">Ключа нет</strong> — LLM недоступен,
+                    вердикты по арифметике.
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div style="margin-top:10px; padding:8px 12px; background:rgba(0,0,0,0.15);
+                border-radius:5px; font-size:11px; color:#9aa0ab; line-height:1.6;">
+        <strong style="color:#e8eaed;">Легенда:</strong>
+        <span style="margin-left:6px;">📊 = реальные данные из внешнего API</span> ·
+        <span>🤖 = интерпретация LLM (может галлюцинировать)</span> ·
+        <span style="color:#fbbf24;">⚠️ = mock (заглушка для разработки)</span> ·
+        <span>🧮 = наша формула (ВЭД-калькулятор, скоринг)</span>
+    </div>
+</details>
+{% endif %}
+
 {# ─── Топ-6 лучших ВЕЗЁМ за всё время (сводка через все прогоны) ─── #}
 {% set best_verdicts = products|selectattr('verdict','equalto','ВЕЗЁМ')|list %}
 {% if best_verdicts %}
@@ -1001,7 +1126,11 @@
             <thead>
                 <tr>
                     <th style="width:13%;">Товар (RU)</th>
-                    <th style="width:6%;" title="Запросов в Яндекс/мес — Yandex Wordstat. В mock-режиме — детерминированная оценка.">Спрос/мес</th>
+                    <th style="width:8%;" title="Спрос в Яндекс/мес (Wordstat).
+Верхняя цифра — все запросы (инфо + коммерч.),
+нижняя — только коммерческие («купить X оптом», «X цена»).
+Для B2B важнее НИЖНЯЯ — это реальные покупатели, а не «посмотреть картинки».
+Обычная пропорция: коммерческие = 5-15% от общих.">Спрос/мес</th>
                     <th style="width:16%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
                     <th style="width:13%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
                     <th style="width:17%;" title="ВЭД-расчёт по ХУДШЕМУ сценарию: закупка по максимальной цене Alibaba, продажа по минимальной цене с Авито, пошлина 10% + НДС 22% + логистика + 2% банк. Если по этому пессимистичному расчёту маржа всё равно ≥50% — нишу стоит брать с запасом прочности.">ВЭД-расчёт (худ.)</th>
@@ -1022,21 +1151,58 @@
                                 поиск: «{{ p.wordstat_query }}»
                             </div>
                         {% endif %}
+                        {# Флаг сертификации в РФ (Wave-6 UX). Грубая эвристика — не юридическая консультация. #}
+                        {% if p.certification %}
+                            {% set c = p.certification %}
+                            {% if c.level == 'high' %}
+                                {% set c_bg = 'rgba(248,113,113,0.12)' %}{% set c_fg = '#f87171' %}
+                            {% elif c.level == 'medium' %}
+                                {% set c_bg = 'rgba(251,191,36,0.12)' %}{% set c_fg = '#fbbf24' %}
+                            {% else %}
+                                {% set c_bg = 'rgba(52,211,153,0.10)' %}{% set c_fg = '#4ade80' %}
+                            {% endif %}
+                            <span style="display:inline-block; margin-top:6px; padding:2px 7px;
+                                         border-radius:4px; font-size:10px; font-weight:600;
+                                         background:{{ c_bg }}; color:{{ c_fg }};"
+                                  title="{{ c.description }} Грубая эвристика по названию — точный документ подбирает сертиф. центр.">
+                                {{ c.icon }} {{ c.label }}
+                            </span>
+                        {% endif %}
                     </td>
                     <td>
+                        {# Раздельно показываем инфо-спрос и коммерческий.
+                           Для B2B важнее коммерческий — это реальные покупатели.
+                           Цвет бейджа приоритетно по коммерческому спросу. #}
                         {% set f = p.frequency or 0 %}
-                        {% if f >= 10000 %}
-                            {% set badge = 'margin--high' %}{% set hint = 'высокий спрос' %}
-                        {% elif f >= 3000 %}
-                            {% set badge = 'margin--good' %}{% set hint = 'средний спрос' %}
-                        {% elif f >= 500 %}
-                            {% set badge = 'margin--mid' %}{% set hint = 'низкий спрос' %}
+                        {% set fc = p.frequency_commercial or 0 %}
+                        {% set ratio = p.commercial_ratio or 0 %}
+                        {% set is_c = p.is_commercial_query %}
+                        {# Пороги ниже (в 5-10 раз), т.к. коммерческий спрос всегда меньше общего #}
+                        {% if fc >= 2000 %}
+                            {% set c_badge = 'margin--high' %}{% set c_hint = 'высокий B2B-спрос' %}
+                        {% elif fc >= 500 %}
+                            {% set c_badge = 'margin--good' %}{% set c_hint = 'средний B2B-спрос' %}
+                        {% elif fc >= 100 %}
+                            {% set c_badge = 'margin--mid' %}{% set c_hint = 'низкий B2B-спрос' %}
                         {% else %}
-                            {% set badge = 'margin--low' %}{% set hint = 'почти не ищут' %}
+                            {% set c_badge = 'margin--low' %}{% set c_hint = 'B2B-спроса почти нет' %}
                         {% endif %}
-                        <span class="margin-badge {{ badge }}" title="{{ hint }}">
-                            {% if f >= 1000 %}{{ "{:,.0f}".format(f).replace(',', ' ') }}{% else %}{{ f }}{% endif %}
-                        </span>
+                        <div style="display:flex; flex-direction:column; gap:3px; font-size:11px; line-height:1.2;">
+                            <span style="color:#9aa0ab;"
+                                  title="Все запросы за месяц (информационные + коммерческие)">
+                                📄 {% if f >= 1000 %}{{ "{:,.0f}".format(f).replace(',', ' ') }}{% else %}{{ f }}{% endif %} инфо
+                            </span>
+                            <span class="margin-badge {{ c_badge }}"
+                                  style="font-size:11px; padding:2px 6px; white-space:nowrap;"
+                                  title="{{ c_hint }} — коммерческие запросы («купить X оптом», «X цена»), реальный покупательский интент. Это ГЛАВНОЕ число для B2B.">
+                                🎯 {% if fc >= 1000 %}{{ "{:,.0f}".format(fc).replace(',', ' ') }}{% else %}{{ fc }}{% endif %} комм
+                                {% if is_c %}
+                                    <span style="color:#34d399; font-size:9px;" title="Исходный запрос уже содержит «купить/оптом/цена» — коммерческий = полный спрос">✓</span>
+                                {% elif ratio > 0 %}
+                                    <span style="color:#9aa0ab; font-size:9px;">({{ "%.0f"|format(ratio*100) }}%)</span>
+                                {% endif %}
+                            </span>
+                        </div>
                     </td>
                     <td>
                         {% if dropped %}
@@ -1049,8 +1215,27 @@
                                     ${{ "%.2f"|format(min_usd) }}{% if max_usd > min_usd %}–${{ "%.2f"|format(max_usd) }}{% endif %}
                                 </span>
                                 <span class="price-sub">
-                                    MOQ от {{ p.alibaba_min_moq or '—' }} · {{ p.alibaba_offers|length }} офферов
+                                    MOQ от {{ p.alibaba_min_moq or '—' }} · {{ p.alibaba_offers|length }} офферов в топе
                                 </span>
+                                {# Конкуренция на стороне Китая — сколько поставщиков в выдаче Alibaba.
+                                   Много = типовой товар, легко найти замену; мало = нишевое #}
+                                {% set ali_comp = p.alibaba_competition or 0 %}
+                                {% if ali_comp >= 100 %}
+                                    {% set ac_col = '#fbbf24' %}{% set ac_bg = 'rgba(251,191,36,0.12)' %}{% set ac_hint = 'много китайских поставщиков — типовой товар, легко торговаться, но и конкурентов много' %}
+                                {% elif ali_comp >= 20 %}
+                                    {% set ac_col = '#34d399' %}{% set ac_bg = 'rgba(52,211,153,0.12)' %}{% set ac_hint = 'здоровое число поставщиков — есть выбор, не монополия' %}
+                                {% elif ali_comp > 0 %}
+                                    {% set ac_col = '#a5b4fc' %}{% set ac_bg = 'rgba(165,180,252,0.12)' %}{% set ac_hint = 'мало поставщиков — нишевый товар, риск застрять на одном' %}
+                                {% else %}
+                                    {% set ac_col = '#6b7280' %}{% set ac_bg = 'rgba(107,114,128,0.10)' %}{% set ac_hint = 'нет данных' %}
+                                {% endif %}
+                                {% if ali_comp > 0 %}
+                                <span style="display:inline-block; margin-top:4px; padding:2px 7px; border-radius:4px;
+                                             background:{{ ac_bg }}; color:{{ ac_col }}; font-size:11px; font-weight:600;"
+                                      title="Всего офферов в выдаче Alibaba по этому запросу. {{ ac_hint }}. Пороги: 100+ много / 20-100 средне / <20 мало.">
+                                    🏭 {{ ali_comp }} поставщ. КНР
+                                </span>
+                                {% endif %}
                             </div>
                             {% set best_alibaba = p.alibaba_offers[0] %}
                             {% if best_alibaba.product_url %}
@@ -1090,8 +1275,24 @@
                                 <span class="price-sub">
                                     {{ "{:,.0f}".format(p.avito_price_rub_min or 0).replace(',', ' ') }}–{{ "{:,.0f}".format(p.avito_price_rub_max or 0).replace(',', ' ') }} ₽
                                 </span>
-                                <span class="price-sub" style="margin-top:4px;">
-                                    {{ p.avito_listings_count or 0 }} объявл.
+                                {# Насыщенность рынка РФ — сколько уже продаётся на Авито.
+                                   Много = конкуренция; мало = либо свободная ниша, либо нет спроса #}
+                                {% set av_lc = p.avito_listings_count or 0 %}
+                                {% if av_lc >= 100 %}
+                                    {% set av_col = '#f87171' %}{% set av_bg = 'rgba(248,113,113,0.12)' %}{% set av_hint = 'высокая конкуренция — рынок насыщен, придётся демпинговать или искать УТП' %}
+                                {% elif av_lc >= 20 %}
+                                    {% set av_col = '#34d399' %}{% set av_bg = 'rgba(52,211,153,0.12)' %}{% set av_hint = 'здоровая конкуренция — есть покупатели, но не толпа продавцов' %}
+                                {% elif av_lc >= 5 %}
+                                    {% set av_col = '#fbbf24' %}{% set av_bg = 'rgba(251,191,36,0.12)' %}{% set av_hint = 'мало предложений — либо свободная ниша, либо нишевый товар' %}
+                                {% elif av_lc > 0 %}
+                                    {% set av_col = '#a5b4fc' %}{% set av_bg = 'rgba(165,180,252,0.12)' %}{% set av_hint = 'единичные объявления — проверь есть ли вообще спрос в РФ' %}
+                                {% else %}
+                                    {% set av_col = '#6b7280' %}{% set av_bg = 'rgba(107,114,128,0.10)' %}{% set av_hint = 'нет объявлений' %}
+                                {% endif %}
+                                <span style="display:inline-block; margin-top:4px; padding:2px 7px; border-radius:4px;
+                                             background:{{ av_bg }}; color:{{ av_col }}; font-size:11px; font-weight:600;"
+                                      title="Всего объявлений на Авито по запросу — конкуренция в РФ. {{ av_hint }}. Пороги: 100+ много / 20-100 средне / 5-20 мало / <5 единичные.">
+                                    🇷🇺 {{ av_lc }} объявл.
                                 </span>
                             </div>
                             {% set first_avito = (p.avito_offers or [])[0] %}
@@ -1383,6 +1584,24 @@
                             {% if p.niche_type %}<span class="type-badge">{{ p.niche_type }}</span>{% endif %}
                             {% if p.is_seasonal %}<span class="type-badge type-badge--amber">🌦 сезон</span>{% endif %}
                         </div>
+                        {% if p.certification %}
+                            {% set c = p.certification %}
+                            {% if c.level == 'high' %}
+                                {% set c_bg = 'rgba(248,113,113,0.12)' %}{% set c_fg = '#f87171' %}
+                            {% elif c.level == 'medium' %}
+                                {% set c_bg = 'rgba(251,191,36,0.12)' %}{% set c_fg = '#fbbf24' %}
+                            {% else %}
+                                {% set c_bg = 'rgba(52,211,153,0.10)' %}{% set c_fg = '#4ade80' %}
+                            {% endif %}
+                            <div style="margin-top:6px;">
+                                <span style="display:inline-block; padding:2px 7px; border-radius:4px;
+                                             font-size:10px; font-weight:600;
+                                             background:{{ c_bg }}; color:{{ c_fg }};"
+                                      title="{{ c.description }} Грубая эвристика — точный документ подбирает сертиф. центр.">
+                                    {{ c.icon }} {{ c.label }}
+                                </span>
+                            </div>
+                        {% endif %}
                         {% if p.offers_count and p.offers_count > 1 %}
                             <div style="font-size:11px; color:#9aa0ab; margin-top:4px;"
                                  title="В этой нише {{ p.offers_count }} офферов от разных поставщиков. Показан с лучшей маржой ({{ '%.0f'|format(p.margin_percent_max) }}%). Минимальная в нише: {{ '%.0f'|format(p.margin_percent_min) }}%.">
@@ -1431,7 +1650,82 @@
                         {% endif %}
                     </td>
                     <td>
-                        <a href="{{ url_for('product_detail', product_id=p.id) }}" class="btn btn-sm btn-ghost">Подробнее</a>
+                        <a href="{{ url_for('product_detail', product_id=p.id) }}"
+                           class="btn btn-sm btn-ghost">Подробнее</a>
+
+                        {# Outcome-пикер (Wave-6 UX): ручной фидбек пользователя после сделки.
+                           Через 20+ отметок скоринг можно калибровать под реальную практику. #}
+                        {% set o = p.outcome %}
+                        {% if o and o.status == 'success' %}
+                            {% set o_col = '#4ade80' %}{% set o_bg = 'rgba(74,222,128,0.14)' %}{% set o_ic = '✅' %}{% set o_lbl = 'получилось' %}
+                        {% elif o and o.status == 'failed' %}
+                            {% set o_col = '#f87171' %}{% set o_bg = 'rgba(248,113,113,0.14)' %}{% set o_ic = '❌' %}{% set o_lbl = 'не получилось' %}
+                        {% elif o and o.status == 'in_progress' %}
+                            {% set o_col = '#a5b4fc' %}{% set o_bg = 'rgba(165,180,252,0.14)' %}{% set o_ic = '🚀' %}{% set o_lbl = 'в работе' %}
+                        {% elif o and o.status == 'skipped' %}
+                            {% set o_col = '#9aa0ab' %}{% set o_bg = 'rgba(154,160,171,0.12)' %}{% set o_ic = '⏭' %}{% set o_lbl = 'отложено' %}
+                        {% else %}
+                            {% set o_col = '#6b7280' %}{% set o_bg = 'rgba(107,114,128,0.10)' %}{% set o_ic = '💤' %}{% set o_lbl = 'не начинала' %}
+                        {% endif %}
+                        <details style="margin-top:6px;">
+                            <summary style="cursor:pointer; padding:3px 8px; border-radius:4px;
+                                            background:{{ o_bg }}; color:{{ o_col }};
+                                            font-size:11px; font-weight:600; display:inline-block;"
+                                     title="Твой личный статус по этой нише — используется для калибровки скоринга по реальным результатам">
+                                {{ o_ic }} {{ o_lbl }}
+                            </summary>
+                            <form method="POST" action="{{ url_for('save_product_outcome_route', product_id=p.id) }}"
+                                  style="margin-top:6px; padding:8px 10px; background:rgba(0,0,0,0.2);
+                                         border-radius:5px; min-width:220px;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div style="font-size:11px; color:#9aa0ab; margin-bottom:4px;">
+                                    Отметить статус реальной сделки:
+                                </div>
+                                <select name="status"
+                                        style="width:100%; padding:4px 6px; font-size:12px;
+                                               background:#1a1b25; border:1px solid rgba(255,255,255,0.15);
+                                               color:#e8eaed; border-radius:4px;">
+                                    <option value="idle"        {% if not o or o.status == 'idle' %}selected{% endif %}>💤 не начинала</option>
+                                    <option value="in_progress" {% if o and o.status == 'in_progress' %}selected{% endif %}>🚀 взяла в работу</option>
+                                    <option value="success"     {% if o and o.status == 'success' %}selected{% endif %}>✅ получилось</option>
+                                    <option value="failed"      {% if o and o.status == 'failed' %}selected{% endif %}>❌ не получилось</option>
+                                    <option value="skipped"     {% if o and o.status == 'skipped' %}selected{% endif %}>⏭ отложено</option>
+                                </select>
+                                <textarea name="notes" rows="2" maxlength="2000"
+                                          placeholder="Комментарий (что пошло не так / поставщик / и т.п.)"
+                                          style="width:100%; margin-top:6px; padding:4px 6px;
+                                                 background:#1a1b25; border:1px solid rgba(255,255,255,0.15);
+                                                 color:#e8eaed; border-radius:4px; font-size:11px;
+                                                 font-family:inherit; resize:vertical;">{{ o.notes if o else '' }}</textarea>
+                                <div style="display:flex; gap:6px; margin-top:6px;">
+                                    <input type="number" name="actual_margin_percent" step="0.1"
+                                           placeholder="реальная маржа %"
+                                           value="{{ o.actual_margin_percent if o and o.actual_margin_percent else '' }}"
+                                           style="flex:1; padding:3px 6px; font-size:11px;
+                                                  background:#1a1b25; border:1px solid rgba(255,255,255,0.15);
+                                                  color:#e8eaed; border-radius:4px;">
+                                    <input type="number" name="actual_profit_rub" step="1000"
+                                           placeholder="реал. прибыль ₽"
+                                           value="{{ o.actual_profit_rub if o and o.actual_profit_rub else '' }}"
+                                           style="flex:1; padding:3px 6px; font-size:11px;
+                                                  background:#1a1b25; border:1px solid rgba(255,255,255,0.15);
+                                                  color:#e8eaed; border-radius:4px;">
+                                </div>
+                                <button type="submit"
+                                        style="margin-top:6px; padding:4px 10px; border-radius:4px;
+                                               background:rgba(52,211,153,0.15); color:#34d399;
+                                               border:1px solid rgba(52,211,153,0.4);
+                                               cursor:pointer; font-size:11px; font-weight:600; width:100%;">
+                                    💾 Сохранить статус
+                                </button>
+                                {% if o and o.updated_at %}
+                                <div style="margin-top:4px; font-size:10px; color:#6b7280; text-align:center;"
+                                     title="{{ o.updated_at }}">
+                                    🕐 {{ o.updated_at|ago }}
+                                </div>
+                                {% endif %}
+                            </form>
+                        </details>
                     </td>
                 </tr>
                 {% endfor %}

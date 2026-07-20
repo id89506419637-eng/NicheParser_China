@@ -282,8 +282,35 @@ def _hydrate_industry_run_from_db() -> dict:
 
 def _dashboard_context(extra: Optional[dict] = None) -> dict:
     """Собирает контекст дашборда. Используется обычным GET и страницей с генерацией."""
+    from core.config import (
+        USE_MOCK_WORDSTAT, USE_MOCK_ALIBABA, USE_MOCK_AVITO,
+        YANDEX_OAUTH_TOKEN, OPENROUTER_API_KEY,
+    )
+    from src.analytics.certification_classifier import classify_certification
     filters = _read_filters(request.args)
     top_products = db.get_top_products(limit=20, filters=filters)
+
+    # Wave-6 UX: обогащаем каждый продукт грубой подсказкой по сертификации в РФ.
+    # НЕ юридическая консультация — только сигнальный флаг, чтоб пользователь
+    # не строил экономику без учёта регуляторного барьера.
+    for _p in top_products:
+        _p["certification"] = classify_certification(
+            title=_p.get("niche_name_ru") or _p.get("title_en") or "",
+            category=_p.get("niche_category") or "",
+        ).as_dict()
+    # То же самое для generated_products (свежий прогон по нише)
+    for _p in _last_niche_run.get("products") or []:
+        _p["certification"] = classify_certification(
+            title=_p.get("title_ru") or _p.get("title_en") or "",
+            category=_last_niche_run.get("niche") or "",
+        ).as_dict()
+
+    # Wave-6 UX: outcomes (ручные пометки пользователя по товарам после сделки).
+    # Одним запросом достаём все — потом раскладываем по product_id.
+    outcomes_map = db.get_product_outcomes_map()
+    for _p in top_products:
+        _outcome = outcomes_map.get(int(_p.get("id") or 0))
+        _p["outcome"] = _outcome  # None если пользователь ничего не помечал
     niches = db.get_all_niches()
     settings = db.get_ved_settings()
     demand_timeline = db.get_demand_timeline(limit_niches=5)
@@ -328,6 +355,16 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         # Wave 6 — сигналы Agent 0C (Import Detector). Подгружаем последний
         # прогон из БД; None если детектор ещё ни разу не запускался.
         "import_signals": _load_latest_import_signals(),
+        # Wave-6 UX — статус источников данных для честности перед пользователем.
+        # Показывает какие числа реальные, какие mock, какие от LLM.
+        "data_sources": {
+            "wordstat_is_real": (not USE_MOCK_WORDSTAT) and bool(YANDEX_OAUTH_TOKEN),
+            "alibaba_is_real": not USE_MOCK_ALIBABA,
+            "avito_is_real": not USE_MOCK_AVITO,
+            "llm_available": bool(OPENROUTER_API_KEY),
+            # Comtrade и zakupki всегда работают через реальные источники,
+            # если запущены — иначе просто нет данных, а не mock
+        },
         # Подмешиваем последний поиск через форму ниши, чтобы результаты не
         # пропадали при следующих переходах/запросах. Хранится в памяти
         # процесса (см. _last_niche_run).
@@ -542,6 +579,51 @@ def take_hypothesis(hyp_id: int):
 
     flash(f"Гипотеза «{niche}» взята в работу — прогнан полный пайплайн", "success")
     return render_template("dashboard.html", **_dashboard_context())
+
+
+@app.route("/product/<int:product_id>/outcome", methods=["POST"])
+def save_product_outcome_route(product_id: int):
+    """
+    Wave-6 UX — пользователь помечает статус реальной сделки по товару:
+    взяла в работу / получилось / не получилось. С опциональной заметкой
+    и фактической маржой (если сделка завершена).
+
+    Через 20+ таких отметок скоринг агентов можно калибровать под реальность.
+    """
+    status = (request.form.get("status") or "").strip().lower()
+    if status not in ("idle", "in_progress", "success", "failed", "skipped"):
+        flash("Неверный статус outcome", "error")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    notes = (request.form.get("notes") or "").strip()[:2000]
+    try:
+        margin = float(request.form.get("actual_margin_percent") or 0)
+    except ValueError:
+        margin = 0.0
+    try:
+        profit = float(request.form.get("actual_profit_rub") or 0)
+    except ValueError:
+        profit = 0.0
+
+    try:
+        db.save_product_outcome(
+            product_id=product_id, status=status, notes=notes,
+            actual_margin_percent=margin, actual_profit_rub=profit,
+        )
+    except Exception as e:
+        logger.error(f"save_product_outcome failed: {e}")
+        flash("Не удалось сохранить статус — см. логи", "error")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    status_labels = {
+        "in_progress": "🚀 взято в работу",
+        "success": "✅ получилось",
+        "failed": "❌ не получилось",
+        "skipped": "⏭ отложено",
+        "idle": "сброшено",
+    }
+    flash(f"Статус товара обновлён: {status_labels.get(status, status)}", "success")
+    return redirect(request.referrer or url_for("dashboard"))
 
 
 @app.route("/save-deal-readiness/<int:hyp_id>", methods=["POST"])

@@ -104,6 +104,7 @@ def _build_prompt(products: List[dict]) -> str:
     for i, p in enumerate(products):
         title = p.get("title_ru") or p.get("title_en") or "?"
         freq = int(p.get("frequency") or 0)
+        freq_c = int(p.get("frequency_commercial") or 0)
         ali_usd = p.get("alibaba_min_usd") or 0
         ali_moq = p.get("alibaba_min_moq") or 0
         avito_med = p.get("avito_price_rub_median") or 0
@@ -113,9 +114,16 @@ def _build_prompt(products: List[dict]) -> str:
         profit_moq = p.get("ved_margin_per_moq_rub") or 0
         price_source = p.get("ved_price_source") or "?"
 
+        # Показываем LLM оба числа спроса: для B2B решения важнее коммерческий,
+        # инфо-спрос («керамическая плитка» = 90% для дизайнеров) обманчив.
+        if freq_c and freq_c != freq:
+            demand_str = f"{freq} запр/мес всего, из них ~{freq_c} коммерческих (купить/оптом)"
+        else:
+            demand_str = f"{freq} запр/мес"
+
         lines.append(
             f"{i}. {title}\n"
-            f"   спрос: {freq} запр/мес · "
+            f"   спрос: {demand_str} · "
             f"Alibaba: ${ali_usd:.2f}/шт, MOQ {ali_moq} · "
             f"Avito (РФ): медиана {int(avito_med):,} ₽ из {avito_count} объявл. "
             f"(источник цены: {price_source})\n"
