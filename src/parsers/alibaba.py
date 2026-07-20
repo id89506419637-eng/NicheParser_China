@@ -162,6 +162,7 @@ def _mock_products(query: str, limit: int) -> Tuple[List[AlibabaProduct], int]:
             width_cm=round(length * rng.uniform(0.4, 0.9), 1),
             height_cm=round(length * rng.uniform(0.3, 0.7), 1),
             product_url=f"{BASE_URL}/product-detail/mock-{seed}-{i}.html",
+            weight_source="mock",  # mock даёт правдоподобный вес по типу товара
         ))
 
     logger.info(
@@ -321,7 +322,74 @@ async def _parse_card(card) -> AlibabaProduct:
         if has:
             product.certificates.append(cert)
 
+    # Вес — часто отсутствует на карточке в выдаче, обычно только на странице
+    # товара («Package Weight», «N.W.», «Weight»). Пробуем несколько атрибутов;
+    # если не удалось — оставляем weight_source="unknown", тогда Agent 5
+    # применит консервативную эвристику по цене товара, а UI покажет
+    # предупреждение «вес не определён — маржа может врать».
+    weight_kg = _parse_weight_from_card(card)
+    if weight_kg is not None and weight_kg > 0:
+        product.weight_kg = weight_kg
+        product.weight_source = "parsed"
+    else:
+        product.weight_kg = 0.0
+        product.weight_source = "unknown"
+
     return product
+
+
+async def _parse_weight_from_card(card) -> float | None:
+    """
+    Попытка выдернуть вес единицы товара с карточки выдачи Alibaba.
+    Возвращает вес в кг или None если не смогли.
+    Alibaba меняет вёрстку часто — селекторы могут протухнуть, тогда None.
+    """
+    # Кандидатные селекторы (порядок — от специфичного к общему)
+    candidates = [
+        "[class*='weight']",
+        "[class*='Weight']",
+        "[data-testid*='weight']",
+        "[class*='specification']",
+    ]
+    for sel in candidates:
+        try:
+            el = await card.query_selector(sel)
+            if not el:
+                continue
+            text = (await el.inner_text()).strip()
+            kg = _parse_weight_text(text)
+            if kg and kg > 0:
+                return kg
+        except Exception:
+            continue
+    return None
+
+
+def _parse_weight_text(text: str) -> float | None:
+    """
+    Достаёт вес из строки. Поддерживает: kg, kgs, g, gram, lb, pound.
+    «Weight: 45.5 kg» → 45.5
+    «N.W.: 500g»     → 0.5
+    «10 lb»          → 4.535
+    """
+    if not text:
+        return None
+    t = text.lower().replace(",", ".")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(kg|kgs|g|gram|lb|lbs|pound)", t)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return None
+    unit = m.group(2)
+    if unit in ("kg", "kgs"):
+        return val
+    if unit in ("g", "gram"):
+        return val / 1000
+    if unit in ("lb", "lbs", "pound"):
+        return val * 0.4535924
+    return None
 
 
 def _parse_price_range(text: str) -> Tuple[float, float]:

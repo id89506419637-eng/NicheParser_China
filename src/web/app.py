@@ -23,7 +23,10 @@ from core.config import (
     FLASK_DEBUG,
 )
 from src.db import database as db
-from src.pipeline.runner import PipelineRunner
+# DEPRECATED 2026-07-20: PipelineRunner больше не вызывается — старый путь
+# через 19 захардкоженных ниш и эвристику ×2.5 заменён новыми агентами.
+# Импорт оставлен на случай если понадобится (файл не удалён).
+# from src.pipeline.runner import PipelineRunner  # noqa
 from src.pipeline.agents.product_generator import generate_products
 from src.pipeline.agents.demand_checker import check_demand
 from src.pipeline.agents.niche_filter import filter_niches
@@ -403,22 +406,40 @@ def product_detail(product_id: int):
     if not product:
         abort(404)
 
-    # Разбивка себестоимости для отображения
+    # Разбивка себестоимости для отображения.
+    # Раньше (bug): пересчитывали заново с эвристикой price_cn × usd_rate × 2.5,
+    # игнорируя сохранённые честные числа от Agent 5. В итоге страница карточки
+    # показывала одну маржу, а таблица товаров — другую. Теперь восстанавливаем
+    # цену продажи ОБРАТНО из сохранённой маржи и себестоимости, и пересчитываем
+    # breakdown с этой ценой — получаем те же компоненты, что видел Agent 5.
     settings_raw = db.get_ved_settings()
     ved_settings = VedSettings(**{
         k: v for k, v in settings_raw.items()
         if k in VedSettings.__dataclass_fields__
     })
     calc = VedCalculator(ved_settings)
-    price_cn = product.get("price_usd_min") or product.get("price_usd_max") or 0
-    price_rf_guess = price_cn * calc.settings.usd_rate * 2.5
-    breakdown = calc.calculate(
-        price_cn_usd=price_cn,
-        price_rf_rub=price_rf_guess,
-        quantity=max(1, product.get("moq") or 1),
-        weight_kg_per_unit=product.get("weight_kg") or 0.5,
-        volume_cbm_per_unit=0.001,
-    )
+
+    price_cn = float(product.get("price_usd_min") or product.get("price_usd_max") or 0)
+    saved_cost = float(product.get("cost_total_rub") or 0)
+    saved_margin = float(product.get("margin_percent") or 0)
+
+    # Обратный ход: price_rf = cost / (1 - margin/100)
+    # Только если маржа < 100 и есть сохранённая себестоимость.
+    price_rf = 0.0
+    if saved_cost > 0 and saved_margin < 100:
+        price_rf = saved_cost / (1 - saved_margin / 100)
+
+    if price_cn > 0 and price_rf > 0:
+        breakdown = calc.calculate(
+            price_cn_usd=price_cn,
+            price_rf_rub=price_rf,
+            quantity=max(1, product.get("moq") or 1),
+            weight_kg_per_unit=product.get("weight_kg") or 0.5,
+            volume_cbm_per_unit=0.001,
+        )
+    else:
+        # Старый продукт без данных ВЭД — не выдумываем цифры.
+        breakdown = None
 
     return render_template(
         "product_detail.html",
@@ -924,32 +945,20 @@ def take_category_route(hs_code: str):
 
 @app.route("/run", methods=["POST"])
 def run_pipeline():
-    """Запуск пайплайна в фоне. Возвращает JSON со статусом запуска."""
-    if not _run_lock.acquire(blocking=False):
-        flash("Анализ уже запущен — дождись завершения", "warning")
-        return redirect(url_for("dashboard"))
+    """
+    DEPRECATED (2026-07-20): старый пайплайн через PipelineRunner использовал
+    Wordstat mock из 19 захардкоженных ниш и эвристику ×2.5 для цены продажи.
+    Новый путь — через кнопки «🤖 Подобрать по нише», «🔬 Разведка индустрии»,
+    «🎯 Детектор импорта» на дашборде: там честные данные и все 10 агентов.
 
-    try:
-        max_niches_raw = request.form.get("max_niches", "").strip()
-        max_niches = int(max_niches_raw) if max_niches_raw.isdigit() else None
-
-        def _worker():
-            try:
-                runner = PipelineRunner(max_niches=max_niches)
-                runner.run()
-            except Exception as e:
-                logger.error(f"Pipeline worker crashed: {e}")
-            finally:
-                _run_lock.release()
-
-        threading.Thread(target=_worker, daemon=True).start()
-        flash("Анализ запущен — обнови страницу через несколько минут", "success")
-
-    except Exception as e:
-        _run_lock.release()
-        logger.error(f"Failed to start pipeline: {e}")
-        flash(f"Не удалось запустить анализ: {e}", "error")
-
+    Оставлен как noop-заглушка для старых ссылок/закладок. Не удаляем сам
+    файл runner.py (правило пользователя: без явного «удали» — не трогать).
+    """
+    flash(
+        "Кнопка «Запустить анализ» удалена. Используй: 🤖 «Подобрать по нише» / "
+        "🔬 «Разведка индустрии» / 🎯 «Детектор импорта» — там реальные данные.",
+        "warning",
+    )
     return redirect(url_for("dashboard"))
 
 

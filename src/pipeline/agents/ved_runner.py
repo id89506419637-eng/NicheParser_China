@@ -57,7 +57,36 @@ def run_ved(products: List[dict]) -> List[dict]:
             _attach_empty(p)
             continue
         moq = max(1, int(best.get("moq") or 1))
-        weight = float(best.get("weight_kg") or 0.5)
+
+        # Вес: если парсер не смог выдернуть (weight_source="unknown"), НЕ
+        # подставляем тихо 0.5 кг — для станка/оборудования это занизит
+        # логистику и завысит маржу в 10-100 раз. Вместо этого — грубая
+        # эвристика по цене товара + флаг ved_weight_warning для UI.
+        w_raw = float(best.get("weight_kg") or 0)
+        w_src = str(best.get("weight_source") or "unknown")
+        weight_warning = False
+        if w_raw > 0 and w_src in ("parsed", "mock"):
+            weight = w_raw
+        else:
+            # Консервативная эвристика по цене: чем дороже — тем тяжелее.
+            # Не идеальна, но точнее чем 0.5 кг для всего.
+            #   ≥ $500  → 100 кг (условное оборудование)
+            #   ≥ $100  → 20 кг  (среднее)
+            #   ≥ $20   → 5 кг
+            #   иначе   → 0.5 кг (мелочь)
+            if price_cn >= 500:
+                weight = 100.0
+            elif price_cn >= 100:
+                weight = 20.0
+            elif price_cn >= 20:
+                weight = 5.0
+            else:
+                weight = 0.5
+            weight_warning = True
+            logger.info(
+                f"Agent 5: '{p.get('title_ru')}' — вес не определён "
+                f"(source={w_src}), эвристика {weight} кг по цене ${price_cn}"
+            )
 
         # Худший сценарий по продаже в РФ: берём МИНИМАЛЬНУЮ цену с Авито,
         # не медиану — если придётся демпинговать против самого дешёвого
@@ -89,6 +118,12 @@ def run_ved(products: List[dict]) -> List[dict]:
         p["ved_price_source"] = price_source
         p["ved_margin_percent"] = res["margin_percent"]
         p["ved_margin_per_moq_rub"] = res["margin_total_rub"]
+        # Флаг «вес не определён — маржа может врать» для UI-предупреждения.
+        # True когда парсер Alibaba не смог выдернуть вес, а мы использовали
+        # эвристику по цене товара (см. w_src выше).
+        p["ved_weight_warning"] = weight_warning
+        p["ved_weight_source"] = w_src
+        p["ved_weight_used_kg"] = weight
         p["ved_breakdown"] = {
             "purchase_rub": res["purchase_rub"],
             "duty_rub": res["duty_rub"],

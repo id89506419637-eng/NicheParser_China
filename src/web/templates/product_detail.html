@@ -53,6 +53,7 @@
 
     <div class="card">
         <div class="card-header"><h2 class="card-title">📊 Разбивка себестоимости</h2></div>
+        {% if breakdown %}
         <dl class="kv-list">
             <dt>Закупка</dt>
             <dd>{{ "{:,.0f}".format(breakdown.purchase_rub) }} ₽</dd>
@@ -77,6 +78,13 @@
             <dt>Маржа на партию</dt>
             <dd><strong>{{ "{:,.0f}".format(product.margin_total_rub) }} ₽</strong></dd>
         </dl>
+        {% else %}
+        <div style="padding:24px; color:#9aa0ab; text-align:center;">
+            <div style="font-size:28px; margin-bottom:8px;">📉</div>
+            Разбивка ВЭД недоступна — товар прогонялся на старой версии
+            (нет сохранённой себестоимости). Перезапусти пайплайн по этой нише.
+        </div>
+        {% endif %}
     </div>
 </div>
 

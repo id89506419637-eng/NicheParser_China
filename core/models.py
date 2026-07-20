@@ -161,3 +161,7 @@ class AlibabaProduct:
     width_cm: float = 0.0
     height_cm: float = 0.0
     product_url: str = ""
+    # Источник веса: "parsed" (вытянули с карточки), "mock" (правдоподобно
+    # сгенерён по типу товара), "unknown" (нет данных, ВЭД-расчёт будет
+    # опираться на грубую эвристику — маржа может врать).
+    weight_source: str = "unknown"

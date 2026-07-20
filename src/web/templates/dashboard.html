@@ -5,17 +5,8 @@
 <div class="page-header">
     <div>
         <h1 class="page-title">Агент-аналитик ниш</h1>
-        <p class="page-subtitle">Wordstat × Alibaba × ВЭД-расчёт × AI-вердикт</p>
+        <p class="page-subtitle">Comtrade × zakupki × Wordstat × Alibaba × Авито × ВЭД × AI-вердикт</p>
     </div>
-    <form action="{{ url_for('run_pipeline') }}" method="POST" class="run-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="number" name="max_niches" min="1" max="100" value="5"
-               class="input-small" title="Сколько ниш анализировать">
-        <button type="submit" class="btn btn-primary" {% if active_run %}disabled{% endif %}>
-            <span class="btn-icon">🚀</span>
-            {% if active_run %}Анализ идёт...{% else %}Запустить анализ{% endif %}
-        </button>
-    </form>
 </div>
 
 <!-- ═════════════════════════════════════════════════════════════════════
@@ -1364,6 +1355,12 @@
                                     {% else %}
                                     <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.0, Авито пуст): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
                                     {% endif %}
+                                    {% if p.ved_weight_warning %}
+                                    <li style="margin-top:4px; color:#f87171;"
+                                        title="Alibaba-парсер не смог выдернуть вес товара с карточки — используем консервативную эвристику по цене. Реальный вес может отличаться в разы, что перекошает логистику и маржу. Уточни вес у поставщика ДО закупки.">
+                                        ⚠ Вес не определён (source={{ p.ved_weight_source or '—' }}) — эвристика {{ p.ved_weight_used_kg }} кг. Маржа может врать
+                                    </li>
+                                    {% endif %}
                                 </ul>
                             </details>
                             {% endif %}
@@ -1736,7 +1733,7 @@
     <div class="empty-state">
         <div class="empty-icon">🔍</div>
         <h3>Пока нет данных</h3>
-        <p>Нажми «Запустить анализ» наверху — агент сам найдёт ниши, спарсит Alibaba и посчитает экономику.</p>
+        <p>Начни с блока «🤖 Подобрать товары по нише» выше — введи название, всё остальное сделают агенты.</p>
     </div>
     {% endif %}
 </div>

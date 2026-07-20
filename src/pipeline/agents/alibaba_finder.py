@@ -80,5 +80,8 @@ def _offer_to_dict(o) -> dict:
         "deals_count": o.deals_count,
         "certificates": list(o.certificates) if o.certificates else [],
         "weight_kg": o.weight_kg,
+        # weight_source: "parsed" | "mock" | "unknown" — используется Agent 5
+        # чтобы отличать честный вес от подставленного дефолта 0.5 кг.
+        "weight_source": getattr(o, "weight_source", "unknown"),
         "product_url": o.product_url,
     }
