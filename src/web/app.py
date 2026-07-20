@@ -36,6 +36,7 @@ from src.pipeline.agents.industry_explorer import explore_industry, explore_hs_c
 from src.pipeline.agents.hypothesis_critic import critique_hypotheses
 from src.pipeline.agents.hypothesis_scorer import validate_and_score, recompute_with_dr
 from src.pipeline.agents.import_detector import detect_import_signals
+from src.pipeline.agents.tender_reader import read_tenders
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
 
@@ -202,10 +203,9 @@ def _filter_ago(iso_dt: Optional[str]) -> str:
 
 def _load_latest_import_signals() -> Optional[dict]:
     """
-    Wave 6 — читаем последний прогон Agent 0C из БД.
+    Wave 6 — читаем последний прогон Agent 0C из БД + приклеиваем
+    тендерные сигналы Agent 0D по этому же batch (LEFT JOIN по hs_code).
     Возвращаем ПЛОСКИЙ список сигналов, отсортированных по composite_score DESC.
-    Классификация hot/growing/medium/weak остаётся как цветной бейдж каждого
-    сигнала, но группировка убрана — единый рейтинг «от лучшего к худшему».
     """
     batch_id = db.get_latest_import_signals_batch()
     if not batch_id:
@@ -213,7 +213,12 @@ def _load_latest_import_signals() -> Optional[dict]:
     rows = db.get_import_signals_by_batch(batch_id)
     if not rows:
         return None
-    # Счётчики для заголовка блока — цветовая сводка сверху
+
+    # Свежие тендерные сигналы по этому же batch (по hs_code)
+    tender_by_hs = db.get_tender_signals_for_import_batch(batch_id)
+    for r in rows:
+        r["tender"] = tender_by_hs.get(r.get("hs_code") or "")
+
     counts = {"hot": 0, "growing": 0, "medium": 0, "weak": 0}
     for r in rows:
         counts[r.get("classification") or "weak"] = counts.get(r.get("classification") or "weak", 0) + 1
@@ -223,8 +228,10 @@ def _load_latest_import_signals() -> Optional[dict]:
         "period_current": rows[0].get("period_current", 0),
         "period_prev": rows[0].get("period_prev", 0),
         "total": len(rows),
-        "signals": rows,           # плоский рейтинг, уже отсортирован
-        "counts": counts,          # {hot: N, growing: N, medium: N, weak: N} — для заголовка
+        "signals": rows,
+        "counts": counts,
+        # Признак что хотя бы у одного сигнала есть тендерные данные
+        "has_tender_data": any(r.get("tender") for r in rows),
     }
 
 
@@ -682,6 +689,62 @@ def run_import_detector_route():
         f"Agent 0C: {len(signals)} категорий проверено, {hot} 🔥HOT + {growing} 🟢растущих",
         "success",
     )
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/run-tender-reader", methods=["POST"])
+def run_tender_reader_route():
+    """
+    Wave 6 — Agent 0D: Tender Reader.
+    Прогоняет последний batch сигналов Agent 0C через веб-поиск zakupki.gov.ru.
+    Для каждой категории тянет свежие тендеры за 90 дней, считает счётчик +
+    цены + активность. Занимает ~1-2 минуты (60 категорий × ~1-2 сек + паузы).
+    """
+    import uuid
+    logger.info("Agent 0D: старт tender reader")
+
+    import_batch_id = db.get_latest_import_signals_batch()
+    if not import_batch_id:
+        flash("Сначала запусти детектор импорта (Agent 0C) — тендерам нужен список категорий", "warning")
+        return redirect(url_for("dashboard"))
+
+    categories = db.get_import_signals_by_batch(import_batch_id)
+    if not categories:
+        flash("Batch импорт-сигналов пуст", "warning")
+        return redirect(url_for("dashboard"))
+
+    try:
+        signals = read_tenders(categories, days_window=90, sleep_between=0.6)
+    except Exception as e:
+        logger.error(f"Agent 0D failed: {type(e).__name__}: {e}")
+        flash(f"Tender Reader упал: {type(e).__name__}. Проверь VPN split-tunnel для zakupki.gov.ru", "error")
+        return redirect(url_for("dashboard"))
+
+    if not signals:
+        flash("Agent 0D не вернул сигналов", "warning")
+        return redirect(url_for("dashboard"))
+
+    tender_batch = uuid.uuid4().hex[:12]
+    try:
+        db.save_tender_signals(signals, tender_batch, import_batch_id)
+    except Exception as e:
+        logger.error(f"save_tender_signals failed: {type(e).__name__}: {e}")
+
+    errs = sum(1 for s in signals if s.error)
+    high = sum(1 for s in signals if s.tender_activity == "high")
+    medium = sum(1 for s in signals if s.tender_activity == "medium")
+    if errs == len(signals):
+        flash(
+            f"Agent 0D: все {errs} запросов упали — вероятно zakupki.gov.ru недоступен. "
+            "Проверь что VPN в split-tunnel режиме (сайт режет иностранные IP через Qrator)",
+            "error",
+        )
+    else:
+        flash(
+            f"Agent 0D: {len(signals)} категорий, {high} 🔥high + {medium} 🟢medium активности" +
+            (f", {errs} ошибок" if errs else ""),
+            "success",
+        )
     return redirect(url_for("dashboard"))
 
 

@@ -223,6 +223,29 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_signals_batch ON import_signals(batch_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_signals_specific ON import_signals(russia_specific_pp DESC)")
 
+        # Сигналы Agent 0D (Tender Reader, Wave 6): свежий срез госзакупок
+        # zakupki.gov.ru по каждой категории. Привязка к batch импорт-сигналов
+        # через import_batch_id — по одному tender-batch на прогон детектора.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tender_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id TEXT NOT NULL,
+                import_batch_id TEXT DEFAULT '',
+                hs_code TEXT NOT NULL,
+                query TEXT NOT NULL,
+                days_window INTEGER DEFAULT 90,
+                tenders_count_90d INTEGER DEFAULT 0,
+                tenders_price_median_rub REAL DEFAULT 0,
+                tenders_price_avg_rub REAL DEFAULT 0,
+                tender_density_per_day REAL DEFAULT 0,
+                tender_activity TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                fetched_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tenders_batch ON tender_signals(batch_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tenders_import ON tender_signals(import_batch_id, hs_code)")
+
         # Deal Readiness Check (Wave 5E) — ручной чеклист по 7 вопросам
         # для каждой гипотезы перед тем как она пойдёт в полный анализ.
         cur.execute("""
@@ -979,3 +1002,61 @@ def get_import_signals_by_batch(batch_id: str) -> list[dict]:
                 d["history_usd_list"] = []
             result.append(d)
         return result
+
+
+# === Tender Signals (Agent 0D, Wave 6) ===
+
+def save_tender_signals(signals: list, batch_id: str, import_batch_id: str = "") -> int:
+    """
+    Сохранить пачку тендерных сигналов одного прогона Agent 0D.
+    Принимает список TenderSignal dataclass или dict.
+    import_batch_id — привязка к batch импорт-сигналов (для JOIN на карточке).
+    """
+    if not signals:
+        return 0
+    with get_connection() as conn:
+        cur = conn.cursor()
+        for s in signals:
+            get = (lambda k: getattr(s, k)) if hasattr(s, 'hs_code') else s.get
+            cur.execute("""
+                INSERT INTO tender_signals (
+                    batch_id, import_batch_id, hs_code, query, days_window,
+                    tenders_count_90d, tenders_price_median_rub, tenders_price_avg_rub,
+                    tender_density_per_day, tender_activity, error, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                batch_id, import_batch_id,
+                get('hs_code') or '', get('query') or '',
+                int(get('days_window') or 90),
+                int(get('tenders_count_90d') or 0),
+                float(get('tenders_price_median_rub') or 0),
+                float(get('tenders_price_avg_rub') or 0),
+                float(get('tender_density_per_day') or 0),
+                get('tender_activity') or 'none',
+                get('error') or '',
+                get('fetched_at') or datetime.now().isoformat(),
+            ))
+        return len(signals)
+
+
+def get_tender_signals_for_import_batch(import_batch_id: str) -> dict[str, dict]:
+    """
+    Прочитать тендерные сигналы, привязанные к batch импорт-детектора.
+    Возвращает {hs_code: tender_signal_dict}. Если по import_batch есть
+    несколько прогонов Agent 0D — берём самый свежий по fetched_at.
+    """
+    if not import_batch_id:
+        return {}
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM tender_signals
+            WHERE import_batch_id = ?
+            ORDER BY fetched_at DESC
+        """, (import_batch_id,)).fetchall()
+        by_hs: dict[str, dict] = {}
+        for r in rows:
+            d = dict(r)
+            hs = d.get("hs_code") or ""
+            if hs and hs not in by_hs:
+                by_hs[hs] = d
+        return by_hs

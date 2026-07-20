@@ -18,8 +18,136 @@
     </form>
 </div>
 
+<!-- ═════════════════════════════════════════════════════════════════════
+     ПАМЯТКА + ЛУЧШИЕ ВЕРДИКТЫ + ЛЕГЕНДА ЦВЕТОВ (всегда сверху)
+     ═════════════════════════════════════════════════════════════════════ -->
+
+<details class="how-to-memo" open style="margin-bottom:16px; padding:14px 18px;
+        background:linear-gradient(135deg, rgba(59,130,246,0.06), rgba(168,85,247,0.06), rgba(34,197,94,0.06));
+        border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
+    <summary style="cursor:pointer; font-weight:700; font-size:15px; color:#e8eaed;
+                    display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">📖</span>
+        Как работать с этим дашбордом
+        <span style="font-size:11px; color:#6b7280; font-weight:400; margin-left:auto;">
+            кликни чтобы свернуть
+        </span>
+    </summary>
+    <div style="margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">
+        <div style="padding:12px 14px; background:rgba(59,130,246,0.08);
+                    border-left:3px solid #3b82f6; border-radius:6px;">
+            <div style="font-weight:700; color:#60a5fa; font-size:13px; margin-bottom:6px;">
+                🔵 ФАЗА 1 · С чего начать
+            </div>
+            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
+                Три способа зайти — выбирай один:<br>
+                <strong>🤖 «Подобрать по нише»</strong> — уже знаешь ЧТО возить<br>
+                <strong>🔬 «Разведка индустрии»</strong> — знаешь только сферу<br>
+                <strong>🎯 «Детектор импорта»</strong> — вообще без идей, покажи что растёт
+            </div>
+        </div>
+        <div style="padding:12px 14px; background:rgba(168,85,247,0.08);
+                    border-left:3px solid #a855f7; border-radius:6px;">
+            <div style="font-weight:700; color:#c084fc; font-size:13px; margin-bottom:6px;">
+                🟣 ФАЗА 2 · Кандидаты — выбери что копать
+            </div>
+            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
+                Результаты разведки: <strong>💡 гипотезы</strong> (по индустрии) и
+                <strong>📈 сигналы</strong> (по импорту). Это ещё НЕ финальные вердикты —
+                это идеи с баллами. Жми <strong>«🚀 Взять в работу»</strong> на понравившейся —
+                пойдёт полный анализ.
+            </div>
+        </div>
+        <div style="padding:12px 14px; background:rgba(34,197,94,0.08);
+                    border-left:3px solid #22c55e; border-radius:6px;">
+            <div style="font-weight:700; color:#4ade80; font-size:13px; margin-bottom:6px;">
+                🟢 ФАЗА 3 · Готовые вердикты
+            </div>
+            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
+                Товары после полного анализа: <strong>ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ</strong> +
+                маржа, прибыль, оценка поставщика. Здесь и надо брать в работу.
+                Блок <strong>«📌 Твои лучшие ниши»</strong> ниже — сводка по всем прогонам.
+            </div>
+        </div>
+    </div>
+    <div style="margin-top:12px; padding:10px 14px; background:rgba(251,191,36,0.06);
+                border-left:3px solid #fbbf24; border-radius:6px;
+                font-size:12px; color:#cbd5e1; line-height:1.6;">
+        💡 <strong>Мостики между фазами:</strong> из детектора (0C) можно
+        «взять категорию в работу» — она сгенерит подниши (уходят в фазу 2).
+        Из гипотез (фаза 2) — «взять в работу» → полный пайплайн (фаза 3).
+    </div>
+</details>
+
+{# ─── Топ-6 лучших ВЕЗЁМ за всё время (сводка через все прогоны) ─── #}
+{% set best_verdicts = products|selectattr('verdict','equalto','ВЕЗЁМ')|list %}
+{% if best_verdicts %}
+<div class="card" style="border-left:4px solid #22c55e;">
+    <div class="card-header">
+        <h2 class="card-title">📌 Твои лучшие ниши — вердикт ВЕЗЁМ</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Сводка по всем прогонам · сортировка по марже ·
+            <span style="color:#4ade80;">всего ВЕЗЁМ: {{ best_verdicts|length }}</span>
+        </span>
+    </div>
+    <div style="padding:12px 16px 16px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;">
+            {% for p in best_verdicts[:6] %}
+            <a href="{{ url_for('product_detail', product_id=p.id) }}"
+               style="text-decoration:none; display:block; padding:12px 14px;
+                      background:rgba(34,197,94,0.06); border:1px solid rgba(34,197,94,0.25);
+                      border-radius:8px; transition:background 0.15s;"
+               onmouseover="this.style.background='rgba(34,197,94,0.12)'"
+               onmouseout="this.style.background='rgba(34,197,94,0.06)'">
+                <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:700; color:#e8eaed; font-size:13px; line-height:1.3;">
+                            {{ p.niche_name_ru or p.title_en|truncate(50) }}
+                        </div>
+                        {% if p.niche_category %}
+                        <div style="font-size:11px; color:#9aa0ab; margin-top:2px;">
+                            {{ p.niche_category }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <span style="padding:3px 10px; border-radius:5px; font-size:12px; font-weight:700;
+                                 background:rgba(34,197,94,0.18); color:#4ade80; white-space:nowrap;"
+                          title="Маржа на 1 штуке по пессимистичному ВЭД-расчёту">
+                        {{ "%.0f"|format(p.margin_percent or 0) }}%
+                    </span>
+                </div>
+                <div style="margin-top:8px; display:flex; gap:12px; font-size:11px; color:#cbd5e1; flex-wrap:wrap;">
+                    <span title="Прибыль за минимальную партию поставщика">
+                        💰 <strong style="color:#e8eaed;">{{ "{:,.0f}".format(p.margin_total_rub or 0).replace(',', ' ') }} ₽</strong>/MOQ
+                    </span>
+                    <span title="Цена закупки на Alibaba за 1 шт">
+                        🇨🇳 ${{ "%.2f"|format(p.price_usd_min or 0) }}
+                    </span>
+                    {% if p.created_at %}
+                    <span style="color:#6b7280; margin-left:auto;" title="{{ p.created_at }}">
+                        🕐 {{ p.created_at|ago }}
+                    </span>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% if best_verdicts|length > 6 %}
+        <div style="margin-top:10px; text-align:center; font-size:12px; color:#6b7280;">
+            Ещё {{ best_verdicts|length - 6 }} ниш ВЕЗЁМ — смотри блок
+            <strong style="color:#9aa0ab;">📊 Топ товары по марже</strong> ниже
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ═════════════════════════════════════════════════════════════════════
+     🔵 ФАЗА 1 · ВХОДНЫЕ ФОРМЫ — с чего начать
+     ═════════════════════════════════════════════════════════════════════ -->
+
 <!-- Agent 1: niche input → LLM-генерация товаров -->
-<div class="card">
+<div class="card" style="border-left:4px solid #3b82f6;">
     <div class="card-header">
         <h2 class="card-title">🤖 Подобрать товары по нише</h2>
         <span class="text-muted" style="font-size:12px;">
@@ -99,7 +227,7 @@
 </style>
 
 <!-- 🔬 Agent 0A: Industry Explorer (Wave 5A) -->
-<div class="card">
+<div class="card" style="border-left:4px solid #3b82f6;">
     <div class="card-header">
         <h2 class="card-title">🔬 Разведка свободных ниш по индустрии</h2>
         <span class="text-muted" style="font-size:12px;">
@@ -139,6 +267,90 @@
         <div class="dot-pulse"><span></span><span></span><span></span></div>
     </div>
 </div>
+
+<!-- 🎯 Agent 0C: Import Detector (Wave 6) -->
+<div class="card" style="border-left:4px solid #3b82f6;">
+    <div class="card-header">
+        <h2 class="card-title">🎯 Детектор ниш по статистике импорта</h2>
+        <span class="text-muted" style="font-size:12px;">
+            Agent 0C · UN Comtrade · сравниваем «Китай→РФ» с «Китай→весь мир»
+        </span>
+    </div>
+    <form id="detector-form" action="{{ url_for('run_import_detector_route') }}" method="POST"
+          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="flex:1; min-width:280px; color:#9aa0ab; font-size:12px; line-height:1.5;">
+            Прогон по 60 промышленным HS-4 категориям. Формула:
+            <strong style="color:#e8eaed;">ΔКитай→РФ − ΔКитай→мир</strong>
+            = «специфически российский» сигнал (импортозамещение / уход брендов).
+            <br>Занимает ~10-30 секунд. Обновляй раз в месяц-квартал.
+        </div>
+        <button id="detector-submit" type="submit" class="btn btn-primary">
+            <span class="btn-icon">🎯</span>
+            <span class="btn-label">
+                {% if import_signals %}Обновить{% else %}Запустить{% endif %}
+            </span>
+        </button>
+    </form>
+    <div id="detector-loader" style="display:none; align-items:center; gap:14px;
+              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🎯</span>
+        <div style="flex:1;">
+            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                Agent 0C тянет данные UN Comtrade...
+            </div>
+            <div style="color:#a5b4fc; font-size:12px; margin-top:2px;">
+                4 запроса × 60 категорий. Обычно 10-30 секунд.
+            </div>
+        </div>
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+
+    {# Второй агент 0D — тендеры zakupki.gov.ru. Кнопка доступна только
+       если уже есть batch импорта: Agent 0D читает те же категории. #}
+    {% if import_signals %}
+    <form id="tender-form" action="{{ url_for('run_tender_reader_route') }}" method="POST"
+          style="display:flex; gap:12px; padding:14px 24px 18px;
+                 align-items:center; flex-wrap:wrap;
+                 border-top:1px solid rgba(255,255,255,0.06);">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="flex:1; min-width:280px; color:#9aa0ab; font-size:12px; line-height:1.5;">
+            <strong style="color:#e8eaed;">📋 Agent 0D — свежие тендеры zakupki.gov.ru</strong>
+            <br>Для каждой категории из детектора выше проверит сколько закупок
+            опубликовано за последние 90 дней + медианная цена. Дополняет
+            годовой сигнал Comtrade актуальной картиной «кто платит сейчас».
+            <br><span style="color:#fbbf24;">Занимает ~1-2 минуты (60 категорий × ~1 сек + паузы для WAF).</span>
+        </div>
+        <button id="tender-submit" type="submit" class="btn"
+                style="background:rgba(251,191,36,0.15); color:#fbbf24;
+                       border:1px solid rgba(251,191,36,0.4);
+                       padding:8px 18px; border-radius:6px; cursor:pointer;
+                       font-size:13px; font-weight:600;">
+            <span class="btn-icon">📋</span>
+            <span class="btn-label">
+                {% if import_signals.has_tender_data %}Обновить тендеры{% else %}Тянуть тендеры{% endif %}
+            </span>
+        </button>
+    </form>
+    <div id="tender-loader" style="display:none; align-items:center; gap:14px;
+              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">📋</span>
+        <div style="flex:1;">
+            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                Agent 0D читает тендеры zakupki.gov.ru...
+            </div>
+            <div style="color:#fbbf24; font-size:12px; margin-top:2px;">
+                ~60 категорий, по 1-2 сек на каждую. Пожалуйста, не закрывай страницу.
+            </div>
+        </div>
+        <div class="dot-pulse"><span></span><span></span><span></span></div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════════
+     🟣 ФАЗА 2 · РЕЗУЛЬТАТЫ РАЗВЕДКИ — кандидаты для оценки
+     ═════════════════════════════════════════════════════════════════════ -->
 
 <!-- Результаты Agent 0A+0B+скоринг -->
 {% if industry_run.hypotheses %}
@@ -313,7 +525,7 @@
     </div>
 {% endmacro %}
 
-<div class="card">
+<div class="card" style="border-left:4px solid #a855f7;">
     <div class="card-header">
         <h2 class="card-title">💡 Гипотезы по индустрии «{{ industry_run.industry_label }}»</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
@@ -353,45 +565,6 @@
     </div>
 </div>
 {% endif %}
-
-<!-- 🎯 Agent 0C: Import Detector (Wave 6) -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">🎯 Детектор ниш по статистике импорта</h2>
-        <span class="text-muted" style="font-size:12px;">
-            Agent 0C · UN Comtrade · сравниваем «Китай→РФ» с «Китай→весь мир»
-        </span>
-    </div>
-    <form id="detector-form" action="{{ url_for('run_import_detector_route') }}" method="POST"
-          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div style="flex:1; min-width:280px; color:#9aa0ab; font-size:12px; line-height:1.5;">
-            Прогон по 60 промышленным HS-4 категориям. Формула:
-            <strong style="color:#e8eaed;">ΔКитай→РФ − ΔКитай→мир</strong>
-            = «специфически российский» сигнал (импортозамещение / уход брендов).
-            <br>Занимает ~10-30 секунд. Обновляй раз в месяц-квартал.
-        </div>
-        <button id="detector-submit" type="submit" class="btn btn-primary">
-            <span class="btn-icon">🎯</span>
-            <span class="btn-label">
-                {% if import_signals %}Обновить{% else %}Запустить{% endif %}
-            </span>
-        </button>
-    </form>
-    <div id="detector-loader" style="display:none; align-items:center; gap:14px;
-              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
-        <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🎯</span>
-        <div style="flex:1;">
-            <div style="font-weight:600; color:#e8eaed; font-size:14px;">
-                Agent 0C тянет данные UN Comtrade...
-            </div>
-            <div style="color:#a5b4fc; font-size:12px; margin-top:2px;">
-                4 запроса × 60 категорий. Обычно 10-30 секунд.
-            </div>
-        </div>
-        <div class="dot-pulse"><span></span><span></span><span></span></div>
-    </div>
-</div>
 
 {# Результаты Agent 0C — макрос для карточки одного сигнала #}
 {% macro signal_card(s, idx) %}
@@ -489,6 +662,48 @@
             {% endif %}
         </div>
         {% endif %}
+
+        {# Тендерный сигнал Agent 0D — если по этой категории есть свежие данные.
+           Показываем: сколько закупок за 90 дней + активность + медиана цены. #}
+        {% if s.tender %}
+        {% set t = s.tender %}
+        {% if t.tender_activity == 'high' %}{% set t_col = '#f87171' %}{% set t_bg = 'rgba(248,113,113,0.12)' %}
+        {% elif t.tender_activity == 'medium' %}{% set t_col = '#34d399' %}{% set t_bg = 'rgba(52,211,153,0.10)' %}
+        {% elif t.tender_activity == 'low' %}{% set t_col = '#fbbf24' %}{% set t_bg = 'rgba(251,191,36,0.10)' %}
+        {% else %}{% set t_col = '#6b7280' %}{% set t_bg = 'rgba(107,114,128,0.08)' %}{% endif %}
+        <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            {% if t.error %}
+            <span style="padding:2px 8px; border-radius:3px; font-size:11px;
+                         background:rgba(248,113,113,0.10); color:#f87171;"
+                  title="Не удалось получить данные с zakupki.gov.ru: {{ t.error }}. Возможно VPN не в split-tunnel — сайт режет иностранные IP.">
+                📋 zakupki недоступен
+            </span>
+            {% else %}
+            <span style="padding:2px 8px; border-radius:3px; font-size:11px;
+                         background:{{ t_bg }}; color:{{ t_col }};"
+                  title="СВЕЖИЙ СИГНАЛ СПРОСА: сколько закупок опубликовано на zakupki.gov.ru за последние {{ t.days_window }} дней по этой категории. Дополняет годовой сигнал Comtrade актуальной картиной «кто платит сейчас».">
+                📋 {{ '{:,}'.format(t.tenders_count_90d).replace(',', ' ') }} тендеров за {{ t.days_window }} дн
+                ({{ '{:.1f}'.format(t.tender_density_per_day) }}/день)
+            </span>
+            {% if t.tenders_price_median_rub %}
+            <span style="font-size:10px; color:#9aa0ab;"
+                  title="Медианная цена тендера по видимой странице (20 закупок). Показывает типичный «средний чек» госзаказчика в этой категории.">
+                медиана {{ '{:,.0f}'.format(t.tenders_price_median_rub).replace(',', ' ') }} ₽
+            </span>
+            {% endif %}
+            <span style="font-size:10px; padding:1px 6px; border-radius:3px;
+                         background:{{ t_bg }}; color:{{ t_col }}; font-weight:600;"
+                  title="Классификация активности:
+🔥 high  = 300+ тендеров за 90 дней (тендер каждые ~7 часов)
+🟢 medium = 50+ тендеров (регулярный спрос, 1-2 раза в день)
+🟡 low   = 5+ тендеров (единичные)
+⚪ none  = &lt;5 тендеров (нет госспроса или неверный поисковый запрос)">
+                {{ t.tender_activity }}
+            </span>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {# Кнопка «Взять категорию в работу» — мост Agent 0C → Agent 0A. LLM
            сгенерирует конкретные подниши ВНУТРИ этой HS-4 группы. #}
         <div style="margin-top:8px;">
@@ -510,7 +725,7 @@
 {% endmacro %}
 
 {% if import_signals %}
-<div class="card">
+<div class="card" style="border-left:4px solid #a855f7;">
     <div class="card-header">
         <h2 class="card-title">📈 Сигналы детектора ({{ import_signals.period_prev }} → {{ import_signals.period_current }})</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
@@ -724,6 +939,21 @@
         });
     }
 
+    // === Лоадер для Agent 0D (Tender Reader, Wave 6) ===
+    var tenderForm = document.getElementById('tender-form');
+    if (tenderForm) {
+        tenderForm.addEventListener('submit', function() {
+            var btn = document.getElementById('tender-submit');
+            var loader = document.getElementById('tender-loader');
+            if (btn) {
+                btn.disabled = true;
+                var label = btn.querySelector('.btn-label');
+                if (label) label.textContent = 'Читаю zakupki...';
+            }
+            if (loader) loader.style.display = 'flex';
+        });
+    }
+
     // === Кнопки «Взять категорию в работу» на карточках сигналов (мост 0C → 0A) ===
     // Отключаем кнопку и меняем текст на «Генерирую...» на время запроса.
     // Лоадер индустрии переиспользуем — он и так показывает «Agent 0A исследует...».
@@ -751,7 +981,7 @@
 {% if generated_products %}
 {% set passed = generated_products|rejectattr('keep', 'equalto', false)|rejectattr('verdict', 'equalto', 'НЕ ВЕЗЁМ')|list %}
 {% set rejected = generated_products|reject('in', passed)|list %}
-<div class="card">
+<div class="card" style="border-left:4px solid #22c55e;">
     <div class="card-header">
         <h2 class="card-title">🎯 Товары по нише «{{ generated_niche }}»</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
@@ -1107,7 +1337,7 @@
 </div>
 
 <!-- Top Products -->
-<div class="card">
+<div class="card" style="border-left:4px solid #22c55e;">
     <div class="card-header">
         <h2 class="card-title">📊 Топ товары по марже</h2>
     </div>
@@ -1254,7 +1484,7 @@
 
 <!-- 📅 История прогонов — accordion по датам -->
 {% if runs_history %}
-<div class="card">
+<div class="card" style="border-left:4px solid #22c55e;">
     <div class="card-header">
         <h2 class="card-title">📅 История прогонов</h2>
         <span class="text-muted" style="font-size:12px;">
