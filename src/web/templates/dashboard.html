@@ -1054,6 +1054,15 @@
             <div style="margin-top:2px; color:#6b7280;">🕐 {{ industry_run.finished_at|ago }}</div>
         </span>
     </div>
+    {# По умолчанию свёрнуто — не отвлекает пока пользователь работает с товарами.
+       Раскрывается кликом «▶ Раскрыть гипотезы». #}
+    <details>
+        <summary style="cursor:pointer; padding:10px 16px;
+                        border-top:1px solid rgba(255,255,255,0.06);
+                        color:#c084fc; font-size:13px; font-weight:600;
+                        background:rgba(168,85,247,0.05);">
+            ▶ Раскрыть {{ industry_run.hypotheses|length }} гипотез (топ-10 развёрнуто, остальные в accordion)
+        </summary>
     <div style="padding:8px 16px 16px;">
         {# Топ-10 развёрнуто #}
         {% for h in industry_run.hypotheses[:10] %}
@@ -1078,6 +1087,7 @@
         </details>
         {% endif %}
     </div>
+    </details>
 </div>
 {% endif %}
 
@@ -1252,6 +1262,15 @@
             <div style="margin-top:2px; color:#6b7280;">🕐 {{ import_signals.created_at|ago }}</div>
         </span>
     </div>
+    {# Сворачиваем по умолчанию — сигналов много (обычно 60), плюс это накопленный
+       сигнал, а не свежий прогон. Раскрывается кликом. #}
+    <details>
+        <summary style="cursor:pointer; padding:10px 16px;
+                        border-top:1px solid rgba(255,255,255,0.06);
+                        color:#c084fc; font-size:13px; font-weight:600;
+                        background:rgba(168,85,247,0.05);">
+            ▶ Раскрыть {{ import_signals.total }} сигналов детектора (топ-15 развёрнуто, остальные в accordion)
+        </summary>
     <div style="padding:8px 16px 16px;">
         {# Единый плоский рейтинг: топ-15 развёрнуто, остальные в accordion.
            Композитный балл (composite_score) = класс + форма тренда + сила сигнала.
@@ -1277,6 +1296,7 @@
         </details>
         {% endif %}
     </div>
+    </details>
 </div>
 {% endif %}
 
