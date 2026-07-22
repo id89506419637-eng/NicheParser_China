@@ -1532,376 +1532,6 @@
    был видно СРАЗУ, а не в самом низу страницы. См. id="fresh-results-anchor".
    ═════════════════════════════════════════════════════════════════════ #}
 
-{% if false %}
-{# --- начало старого места (закрыто false-if, оставлено для истории) --- #}
-    {% if passed %}
-    <div class="table-wrapper">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th style="width:13%;">Товар (RU)</th>
-                    <th style="width:8%;" title="Спрос в Яндекс/мес (Wordstat).
-Верхняя цифра — все запросы (инфо + коммерч.),
-нижняя — только коммерческие («купить X оптом», «X цена»).
-Для B2B важнее НИЖНЯЯ — это реальные покупатели, а не «посмотреть картинки».
-Обычная пропорция: коммерческие = 5-15% от общих.">Спрос/мес</th>
-                    <th style="width:16%;" title="Топ-5 офферов с Alibaba: мин $ за единицу, мин MOQ, число офферов. В mock-режиме — детерминированные данные.">Alibaba (топ-5)</th>
-                    <th style="width:13%;" title="Цена продажи в РФ по Авито: медиана из топ-10 объявлений + общее число объявлений (насыщение рынка). Эта медиана идёт в ВЭД-расчёт как реальная цена продажи.">Авито (РФ цена)</th>
-                    <th style="width:17%;" title="ВЭД-расчёт по ХУДШЕМУ сценарию: закупка по максимальной цене Alibaba, продажа по минимальной цене с Авито, пошлина 10% + НДС 22% + логистика + 2% банк. Если по этому пессимистичному расчёту маржа всё равно ≥50% — нишу стоит брать с запасом прочности.">ВЭД-расчёт (худ.)</th>
-                    <th style="width:13%;" title="Финальный вердикт Агента 7: LLM анализирует весь пакет (спрос, цены, маржу, насыщение рынка) и выдаёт решение ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ + обоснование. Если LLM недоступен — арифметика по порогам ≥50%/≥100k₽.">Вердикт</th>
-                    <th style="width:11%;" title="Агент 8 — скоринг поставщика по данным Alibaba (рейтинг, число сделок, сертификаты) + LLM поверх. Композитный балл 0–100, уровень риска и список красных флагов с рекомендацией по ручной проверке.">Поставщик (скор)</th>
-                    <th>Почему имеет смысл для РФ</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in passed %}
-                {% set dropped = false %}
-                <tr>
-                    <td>
-                        <div class="niche-name" {% if dropped %}style="text-decoration:line-through;"{% endif %}>{{ p.title_ru }}</div>
-                        <div style="font-size:11px; color:#6b7280; margin-top:2px;">{{ p.title_en }}</div>
-                        {% if p.wordstat_query %}
-                            <div style="font-size:11px; color:#6b7280;">
-                                поиск: «{{ p.wordstat_query }}»
-                            </div>
-                        {% endif %}
-                        {# Флаг сертификации в РФ (Wave-6 UX). Грубая эвристика — не юридическая консультация. #}
-                        {% if p.certification %}
-                            {% set c = p.certification %}
-                            {% if c.level == 'high' %}
-                                {% set c_bg = 'rgba(248,113,113,0.12)' %}{% set c_fg = '#f87171' %}
-                            {% elif c.level == 'medium' %}
-                                {% set c_bg = 'rgba(251,191,36,0.12)' %}{% set c_fg = '#fbbf24' %}
-                            {% else %}
-                                {% set c_bg = 'rgba(52,211,153,0.10)' %}{% set c_fg = '#4ade80' %}
-                            {% endif %}
-                            <span style="display:inline-block; margin-top:6px; padding:2px 7px;
-                                         border-radius:4px; font-size:10px; font-weight:600;
-                                         background:{{ c_bg }}; color:{{ c_fg }};"
-                                  title="{{ c.description }} Грубая эвристика по названию — точный документ подбирает сертиф. центр.">
-                                {{ c.icon }} {{ c.label }}
-                            </span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {# Раздельно показываем инфо-спрос и коммерческий.
-                           Для B2B важнее коммерческий — это реальные покупатели.
-                           Цвет бейджа приоритетно по коммерческому спросу. #}
-                        {% set f = p.frequency or 0 %}
-                        {% set fc = p.frequency_commercial or 0 %}
-                        {% set ratio = p.commercial_ratio or 0 %}
-                        {% set is_c = p.is_commercial_query %}
-                        {# Пороги ниже (в 5-10 раз), т.к. коммерческий спрос всегда меньше общего #}
-                        {% if fc >= 2000 %}
-                            {% set c_badge = 'margin--high' %}{% set c_hint = 'высокий B2B-спрос' %}
-                        {% elif fc >= 500 %}
-                            {% set c_badge = 'margin--good' %}{% set c_hint = 'средний B2B-спрос' %}
-                        {% elif fc >= 100 %}
-                            {% set c_badge = 'margin--mid' %}{% set c_hint = 'низкий B2B-спрос' %}
-                        {% else %}
-                            {% set c_badge = 'margin--low' %}{% set c_hint = 'B2B-спроса почти нет' %}
-                        {% endif %}
-                        <div style="display:flex; flex-direction:column; gap:3px; font-size:11px; line-height:1.2;">
-                            <span style="color:#9aa0ab;"
-                                  title="Все запросы за месяц (информационные + коммерческие)">
-                                📄 {% if f >= 1000 %}{{ "{:,.0f}".format(f).replace(',', ' ') }}{% else %}{{ f }}{% endif %} инфо
-                            </span>
-                            <span class="margin-badge {{ c_badge }}"
-                                  style="font-size:11px; padding:2px 6px; white-space:nowrap;"
-                                  title="{{ c_hint }} — коммерческие запросы («купить X оптом», «X цена»), реальный покупательский интент. Это ГЛАВНОЕ число для B2B.">
-                                🎯 {% if fc >= 1000 %}{{ "{:,.0f}".format(fc).replace(',', ' ') }}{% else %}{{ fc }}{% endif %} комм
-                                {% if is_c %}
-                                    <span style="color:#34d399; font-size:9px;" title="Исходный запрос уже содержит «купить/оптом/цена» — коммерческий = полный спрос">✓</span>
-                                {% elif ratio > 0 %}
-                                    <span style="color:#9aa0ab; font-size:9px;">({{ "%.0f"|format(ratio*100) }}%)</span>
-                                {% endif %}
-                            </span>
-                        </div>
-                    </td>
-                    <td>
-                        {% if dropped %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% elif p.alibaba_offers %}
-                            {% set min_usd = p.alibaba_min_usd or 0 %}
-                            {% set max_usd = p.alibaba_max_usd or 0 %}
-                            <div class="price-cell">
-                                <span class="price-main">
-                                    ${{ "%.2f"|format(min_usd) }}{% if max_usd > min_usd %}–${{ "%.2f"|format(max_usd) }}{% endif %}
-                                </span>
-                                <span class="price-sub">
-                                    MOQ от {{ p.alibaba_min_moq or '—' }} · {{ p.alibaba_offers|length }} офферов в топе
-                                </span>
-                                {# Конкуренция на стороне Китая — сколько поставщиков в выдаче Alibaba.
-                                   Много = типовой товар, легко найти замену; мало = нишевое #}
-                                {% set ali_comp = p.alibaba_competition or 0 %}
-                                {% if ali_comp >= 100 %}
-                                    {% set ac_col = '#fbbf24' %}{% set ac_bg = 'rgba(251,191,36,0.12)' %}{% set ac_hint = 'много китайских поставщиков — типовой товар, легко торговаться, но и конкурентов много' %}
-                                {% elif ali_comp >= 20 %}
-                                    {% set ac_col = '#34d399' %}{% set ac_bg = 'rgba(52,211,153,0.12)' %}{% set ac_hint = 'здоровое число поставщиков — есть выбор, не монополия' %}
-                                {% elif ali_comp > 0 %}
-                                    {% set ac_col = '#a5b4fc' %}{% set ac_bg = 'rgba(165,180,252,0.12)' %}{% set ac_hint = 'мало поставщиков — нишевый товар, риск застрять на одном' %}
-                                {% else %}
-                                    {% set ac_col = '#6b7280' %}{% set ac_bg = 'rgba(107,114,128,0.10)' %}{% set ac_hint = 'нет данных' %}
-                                {% endif %}
-                                {% if ali_comp > 0 %}
-                                <span style="display:inline-block; margin-top:4px; padding:2px 7px; border-radius:4px;
-                                             background:{{ ac_bg }}; color:{{ ac_col }}; font-size:11px; font-weight:600;"
-                                      title="Всего офферов в выдаче Alibaba по этому запросу. {{ ac_hint }}. Пороги: 100+ много / 20-100 средне / <20 мало.">
-                                    🏭 {{ ali_comp }} поставщ. КНР
-                                </span>
-                                {% endif %}
-                            </div>
-                            {% set best_alibaba = p.alibaba_offers[0] %}
-                            {% if best_alibaba.product_url %}
-                                <a href="{{ best_alibaba.product_url }}" target="_blank" rel="noopener"
-                                   style="display:inline-block; margin-top:6px; font-size:11px;
-                                          color:#a5b4fc; text-decoration:underline;"
-                                   title="Открыть лучший оффер на Alibaba в новой вкладке для ручной проверки">
-                                    🔗 проверить на Alibaba →
-                                </a>
-                            {% endif %}
-                            <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать все офферы</summary>
-                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab;">
-                                    {% for o in p.alibaba_offers %}
-                                    <li style="margin-bottom:4px; line-height:1.4;">
-                                        <a href="{{ o.product_url }}" target="_blank" rel="noopener" style="color:#a5b4fc;">
-                                            {{ o.title_en|truncate(48) }}
-                                        </a>
-                                        — ${{ "%.2f"|format(o.price_usd_min) }}{% if o.price_usd_max > o.price_usd_min %}–${{ "%.2f"|format(o.price_usd_max) }}{% endif %},
-                                        MOQ {{ o.moq or '—' }}, ⭐{{ "%.1f"|format(o.supplier_rating) }}
-                                    </li>
-                                    {% endfor %}
-                                </ul>
-                            </details>
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">не найдено</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if dropped %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% elif p.avito_price_rub_median %}
-                            <div class="price-cell">
-                                <span class="price-main">
-                                    {{ "{:,.0f}".format(p.avito_price_rub_median).replace(',', ' ') }} ₽
-                                </span>
-                                <span class="price-sub">
-                                    {{ "{:,.0f}".format(p.avito_price_rub_min or 0).replace(',', ' ') }}–{{ "{:,.0f}".format(p.avito_price_rub_max or 0).replace(',', ' ') }} ₽
-                                </span>
-                                {# Насыщенность рынка РФ — сколько уже продаётся на Авито.
-                                   Много = конкуренция; мало = либо свободная ниша, либо нет спроса #}
-                                {% set av_lc = p.avito_listings_count or 0 %}
-                                {% if av_lc >= 100 %}
-                                    {% set av_col = '#f87171' %}{% set av_bg = 'rgba(248,113,113,0.12)' %}{% set av_hint = 'высокая конкуренция — рынок насыщен, придётся демпинговать или искать УТП' %}
-                                {% elif av_lc >= 20 %}
-                                    {% set av_col = '#34d399' %}{% set av_bg = 'rgba(52,211,153,0.12)' %}{% set av_hint = 'здоровая конкуренция — есть покупатели, но не толпа продавцов' %}
-                                {% elif av_lc >= 5 %}
-                                    {% set av_col = '#fbbf24' %}{% set av_bg = 'rgba(251,191,36,0.12)' %}{% set av_hint = 'мало предложений — либо свободная ниша, либо нишевый товар' %}
-                                {% elif av_lc > 0 %}
-                                    {% set av_col = '#a5b4fc' %}{% set av_bg = 'rgba(165,180,252,0.12)' %}{% set av_hint = 'единичные объявления — проверь есть ли вообще спрос в РФ' %}
-                                {% else %}
-                                    {% set av_col = '#6b7280' %}{% set av_bg = 'rgba(107,114,128,0.10)' %}{% set av_hint = 'нет объявлений' %}
-                                {% endif %}
-                                <span style="display:inline-block; margin-top:4px; padding:2px 7px; border-radius:4px;
-                                             background:{{ av_bg }}; color:{{ av_col }}; font-size:11px; font-weight:600;"
-                                      title="Всего объявлений на Авито по запросу — конкуренция в РФ. {{ av_hint }}. Пороги: 100+ много / 20-100 средне / 5-20 мало / <5 единичные.">
-                                    🇷🇺 {{ av_lc }} объявл.
-                                </span>
-                            </div>
-                            {% set first_avito = (p.avito_offers or [])[0] %}
-                            {% if first_avito and first_avito.url %}
-                                <a href="{{ first_avito.url }}" target="_blank" rel="noopener"
-                                   style="display:inline-block; margin-top:6px; font-size:11px;
-                                          color:#a5b4fc; text-decoration:underline;"
-                                   title="Открыть первое объявление на Авито в новой вкладке для ручной проверки">
-                                    🔗 проверить на Авито →
-                                </a>
-                            {% endif %}
-                            {% if p.avito_offers %}
-                            <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">показать все объявления</summary>
-                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab;">
-                                    {% for o in p.avito_offers %}
-                                    <li style="margin-bottom:4px; line-height:1.4;">
-                                        <a href="{{ o.url }}" target="_blank" rel="noopener" style="color:#a5b4fc;">
-                                            {{ o.title|truncate(48) }}
-                                        </a>
-                                        — {{ "{:,.0f}".format(o.price_rub).replace(',', ' ') }} ₽
-                                        <span style="color:#6b7280;">({{ o.seller_type }})</span>
-                                    </li>
-                                    {% endfor %}
-                                </ul>
-                            </details>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">не найдено</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if dropped %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% elif p.ved_cost_per_unit_rub %}
-                            {% set m = p.ved_margin_percent or 0 %}
-                            {% if m >= 70 %}
-                                {% set m_class = 'margin--high' %}
-                            {% elif m >= 50 %}
-                                {% set m_class = 'margin--good' %}
-                            {% elif m >= 30 %}
-                                {% set m_class = 'margin--mid' %}
-                            {% else %}
-                                {% set m_class = 'margin--low' %}
-                            {% endif %}
-                            <div class="price-cell">
-                                <span class="price-main">
-                                    {{ "{:,.0f}".format(p.ved_cost_per_unit_rub).replace(',', ' ') }} ₽/шт
-                                </span>
-                                <span class="price-sub" style="margin-top:4px;">
-                                    Маржа:
-                                    <span class="margin-badge {{ m_class }}">{{ "%.0f"|format(m) }}%</span>
-                                </span>
-                                <span class="price-sub" style="margin-top:4px;">
-                                    Прибыль/MOQ: <strong>{{ "{:,.0f}".format(p.ved_margin_per_moq_rub or 0).replace(',', ' ') }} ₽</strong>
-                                </span>
-                            </div>
-                            {% if p.ved_breakdown %}
-                            <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">разбивка</summary>
-                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#9aa0ab; line-height:1.4;">
-                                    <li>Закупка: {{ "{:,.0f}".format(p.ved_breakdown.purchase_rub).replace(',', ' ') }} ₽</li>
-                                    <li>Пошлина: {{ "{:,.0f}".format(p.ved_breakdown.duty_rub).replace(',', ' ') }} ₽</li>
-                                    <li>НДС: {{ "{:,.0f}".format(p.ved_breakdown.vat_rub).replace(',', ' ') }} ₽</li>
-                                    <li>Логистика: {{ "{:,.0f}".format(p.ved_breakdown.logistics_rub).replace(',', ' ') }} ₽</li>
-                                    <li>Банк: {{ "{:,.0f}".format(p.ved_breakdown.bank_rub).replace(',', ' ') }} ₽</li>
-                                    {% if p.ved_price_source == 'avito_min' %}
-                                    <li style="margin-top:4px; color:#a5b4fc;">Цена продажи РФ (мин Авито, худ. сценарий): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
-                                    {% else %}
-                                    <li style="margin-top:4px; color:#fbbf24;">Цена продажи РФ (эвристика ×2.0, Авито пуст): {{ "{:,.0f}".format(p.ved_price_rf_rub or 0).replace(',', ' ') }} ₽</li>
-                                    {% endif %}
-                                    {% if p.ved_weight_warning %}
-                                    <li style="margin-top:4px; color:#f87171;"
-                                        title="Alibaba-парсер не смог выдернуть вес товара с карточки — используем консервативную эвристику по цене. Реальный вес может отличаться в разы, что перекошает логистику и маржу. Уточни вес у поставщика ДО закупки.">
-                                        ⚠ Вес не определён (source={{ p.ved_weight_source or '—' }}) — эвристика {{ p.ved_weight_used_kg }} кг. Маржа может врать
-                                    </li>
-                                    {% endif %}
-                                </ul>
-                            </details>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">нет данных</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if p.verdict %}
-                            <span class="verdict-badge verdict-{{ p.verdict|replace(' ','-')|lower }}">
-                                {{ p.verdict }}
-                            </span>
-                            {% if p.verdict_reason %}
-                                <div style="font-size:11px; color:#9aa0ab; margin-top:6px; line-height:1.4;">
-                                    {{ p.verdict_reason }}
-                                </div>
-                            {% endif %}
-                            {% if p.verdict_source == 'arithmetic' %}
-                                <div style="font-size:10px; color:#6b7280; margin-top:4px;" title="LLM был недоступен — вердикт выдан по арифметическим порогам">
-                                    арифметика
-                                </div>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if p.supplier_score is defined and p.supplier_score > 0 %}
-                            {% set ss = p.supplier_score %}
-                            {% if ss >= 70 %}
-                                {% set ss_class = 'margin--good' %}
-                            {% elif ss >= 40 %}
-                                {% set ss_class = 'margin--mid' %}
-                            {% else %}
-                                {% set ss_class = 'margin--low' %}
-                            {% endif %}
-                            <div class="price-cell">
-                                <span class="margin-badge {{ ss_class }}" title="Скор: {{ ss }}/100">
-                                    {{ ss }}/100
-                                </span>
-                                <span class="price-sub" style="margin-top:4px;">
-                                    {% if p.supplier_risk_level == 'низкий' %}
-                                        🟢 {{ p.supplier_risk_level }}
-                                    {% elif p.supplier_risk_level == 'средний' %}
-                                        🟡 {{ p.supplier_risk_level }}
-                                    {% else %}
-                                        🔴 {{ p.supplier_risk_level }}
-                                    {% endif %}
-                                    риск
-                                </span>
-                            </div>
-                            {% if p.supplier_red_flags %}
-                            <details style="margin-top:6px;">
-                                <summary style="cursor:pointer; font-size:11px; color:#9aa0ab;">⚠ {{ p.supplier_red_flags|length }} флаг{{ 'ов' if p.supplier_red_flags|length >= 5 else ('а' if p.supplier_red_flags|length >= 2 else '') }}</summary>
-                                <ul style="margin:6px 0 0 0; padding-left:14px; font-size:11px; color:#fbbf24; line-height:1.4;">
-                                    {% for flag in p.supplier_red_flags %}
-                                    <li>{{ flag }}</li>
-                                    {% endfor %}
-                                </ul>
-                            </details>
-                            {% endif %}
-                            {% if p.supplier_audit_recommendation %}
-                                <div style="font-size:11px; color:#9aa0ab; margin-top:4px; line-height:1.3;">{{ p.supplier_audit_recommendation }}</div>
-                            {% endif %}
-                            {% if p.supplier_audit_source == 'arithmetic' %}
-                                <div style="font-size:10px; color:#6b7280; margin-top:2px;">арифметика</div>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-muted" style="font-size:12px;">—</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ p.rationale or '—' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div style="padding:32px 24px; text-align:center; color:#9aa0ab;">
-        <div style="font-size:32px; margin-bottom:8px;">🤔</div>
-        <div>Ни один товар не прошёл фильтр или выгодную проверку.</div>
-        <div style="font-size:12px; margin-top:4px;">Раскрой блок «Отброшено» ниже — там увидишь причины.</div>
-    </div>
-    {% endif %}
-
-    {% if rejected %}
-    <details style="border-top:1px solid rgba(255,255,255,0.06); padding:14px 24px;">
-        <summary style="cursor:pointer; color:#9aa0ab; font-size:13px;">
-            🗑 Отброшено ({{ rejected|length }}) — раскрыть и посмотреть причины
-        </summary>
-        <ul style="margin:12px 0 0 0; padding-left:18px; font-size:12px; color:#9aa0ab; line-height:1.6;">
-            {% for p in rejected %}
-            <li style="margin-bottom:8px;">
-                <span style="color:#e8eaed; font-weight:600;">{{ p.title_ru }}</span>
-                {% if p.keep is defined and not p.keep %}
-                    <span class="margin-badge margin--low" style="margin-left:6px;">✗ дроп Агента 3</span>
-                    {% if p.filter_reason %}
-                        <div style="color:#9aa0ab; margin-top:2px;">{{ p.filter_reason }}</div>
-                    {% endif %}
-                {% else %}
-                    <span class="verdict-badge verdict-не-везём" style="margin-left:6px;">НЕ ВЕЗЁМ</span>
-                    {% if p.ved_margin_percent is defined %}
-                        <span style="margin-left:6px; color:#6b7280;">
-                            маржа {{ "%.0f"|format(p.ved_margin_percent) }}%,
-                            прибыль {{ "{:,.0f}".format(p.ved_margin_per_moq_rub or 0).replace(',', ' ') }} ₽/MOQ
-                        </span>
-                    {% endif %}
-                    {% if p.verdict_reason %}
-                        <div style="color:#9aa0ab; margin-top:2px;">{{ p.verdict_reason }}</div>
-                    {% endif %}
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-    </details>
-    {% endif %}
-</div>
-{% endif %}
 
 <!-- Stats Cards -->
 <div class="stats-row">
@@ -1957,11 +1587,13 @@
     </form>
 </div>
 
-<!-- Top Products -->
-<div class="card" style="border-left:4px solid #22c55e;">
-    <div class="card-header">
-        <h2 class="card-title">📊 Топ товары по марже</h2>
-    </div>
+<!-- Top Products (свёрнуто по умолчанию, архив всех прогонов) -->
+<details class="card" style="border-left:4px solid #22c55e;">
+    <summary style="cursor:pointer; list-style:none; padding:16px 20px;
+                    display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="card-title" style="margin:0;">📊 Топ товары по марже <span style="color:#6b7280; font-weight:400; font-size:13px;">(архив, {{ products|length if products else 0 }} шт)</span></h2>
+        <span style="color:#4ade80; font-size:12px; font-weight:600;">▶ раскрыть</span>
+    </summary>
 
     {% if products %}
     <div class="table-wrapper">
@@ -2159,7 +1791,7 @@
         <p>Начни с блока «🤖 Подобрать товары по нише» выше — введи название, всё остальное сделают агенты.</p>
     </div>
     {% endif %}
-</div>
+</details>
 
 <!-- Demand chart: показываем только если есть 4+ дат -->
 {% set all_dates = [] %}
@@ -2196,16 +1828,17 @@
 </div>
 {% endif %}
 
-<!-- 📅 История прогонов — accordion по датам -->
+<!-- 📅 История прогонов (свёрнуто по умолчанию, архив) -->
 {% if runs_history %}
-<div class="card" style="border-left:4px solid #22c55e;">
-    <div class="card-header">
-        <h2 class="card-title">📅 История прогонов</h2>
-        <span class="text-muted" style="font-size:12px;">
-            Последние {{ runs_history|length }} прогон{% if runs_history|length == 1 %}{% elif runs_history|length < 5 %}а{% else %}ов{% endif %} ·
-            свернуты — кликни на дату чтобы развернуть
-        </span>
-    </div>
+<details class="card" style="border-left:4px solid #22c55e;">
+    <summary style="cursor:pointer; list-style:none; padding:16px 20px;
+                    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;">
+        <div>
+            <h2 class="card-title" style="margin:0;">📅 История прогонов <span style="color:#6b7280; font-weight:400; font-size:13px;">(архив, последние {{ runs_history|length }})</span></h2>
+            <span class="text-muted" style="font-size:12px;">свернуты — кликни, чтобы развернуть</span>
+        </div>
+        <span style="color:#4ade80; font-size:12px; font-weight:600;">▶ раскрыть</span>
+    </summary>
     <div style="padding:8px 16px 16px;">
         {% for run in runs_history %}
         <details style="margin-bottom:8px; background:rgba(255,255,255,0.02);
@@ -2303,7 +1936,7 @@
         </details>
         {% endfor %}
     </div>
-</div>
+</details>
 {% endif %}
 
 {% endblock %}
