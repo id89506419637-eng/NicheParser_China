@@ -1,28 +1,872 @@
 {% extends "base.html" %}
 {% block title %}Товары — NicheParser{% endblock %}
 
-{% block content %}
-<div style="padding: 24px;">
-    <h1 style="font-size: 22px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
-        Товары
-    </h1>
-    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
-        {{ total }} проверенных товаров ·
-        <span style="color: var(--green);">✓ ВЕЗЁМ {{ verdicts_count['ВЕЗЁМ'] }}</span> ·
-        <span style="color: var(--amber);">? ИЗУЧИТЬ {{ verdicts_count['ИЗУЧИТЬ'] }}</span> ·
-        <span style="color: var(--red);">✗ НЕ ВЕЗЁМ {{ verdicts_count['НЕ ВЕЗЁМ'] }}</span>
-    </p>
+{#
+  Master-detail страница /products.
+  Слева — плотная таблица со всеми проверенными товарами.
+  Справа — slide-over с деталями по 6 функциональным шагам
+  (Найти → Проверить → Посчитать → Риски → Вердикт → Факт).
+#}
 
-    <div style="padding: 32px; text-align: center; background: var(--bg-card);
-                border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-secondary);">
-        <div style="font-size: 32px; margin-bottom: 8px;">🚧</div>
-        <p>Страница <code>/products</code> — master-detail (список + slide-over).</p>
-        <p style="font-size: 12px; margin-top: 8px;">
-            Наполнение — этап 4 UX-волны. Пока данные грузятся, шаблон-заглушка.
-        </p>
-        <p style="font-size: 11px; margin-top: 12px; color: var(--text-muted);">
-            Уже загружено: <strong style="color: var(--text-primary);">{{ products|length }}</strong> товаров
-        </p>
+{% macro fmt_int(v) -%}
+  {%- if v is none or v == '' -%}—{%- else -%}
+    {{ "{:,.0f}".format(v|float)|replace(",", " ") }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro fmt_pct(v) -%}
+  {%- if v is none or v == '' -%}—{%- else -%}
+    {{ "{:.0f}".format(v|float) }}%
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro margin_color(v) -%}
+  {%- if v is none -%}var(--text-muted)
+  {%- elif v|float >= 70 -%}var(--green-strong)
+  {%- elif v|float >= 50 -%}#7fd15a
+  {%- elif v|float >= 30 -%}var(--amber)
+  {%- else -%}var(--red)
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro supplier_color(v) -%}
+  {%- if v is none -%}var(--text-muted)
+  {%- elif v|int >= 70 -%}var(--green)
+  {%- elif v|int >= 40 -%}var(--amber)
+  {%- else -%}var(--red)
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro verdict_class(v) -%}
+  {%- if v == 'ВЕЗЁМ' -%}pv-pill pv-pill--green
+  {%- elif v == 'ИЗУЧИТЬ' -%}pv-pill pv-pill--amber
+  {%- elif v == 'НЕ ВЕЗЁМ' -%}pv-pill pv-pill--red
+  {%- else -%}pv-pill pv-pill--muted{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<style>
+  /* -------------------------------- header -------------------------------- */
+  .pv-page { padding: 20px 24px 40px; }
+  .pv-header { margin-bottom: 18px; }
+  .pv-header h1 {
+    font-size: 22px; font-weight: 700; color: var(--text-primary);
+    margin: 0 0 6px 0; letter-spacing: -0.01em;
+  }
+  .pv-header .pv-sub {
+    color: var(--text-secondary); font-size: 13px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .pv-sub .pv-sub-count b { font-weight: 600; color: var(--text-primary); }
+  .pv-dot { display:inline-block; width:6px; height:6px; border-radius:50%;
+            vertical-align:middle; margin-right:6px; }
+  .pv-dot--green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .pv-dot--amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .pv-dot--red   { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+  /* -------------------------------- toolbar ------------------------------- */
+  .pv-toolbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 12px 0; margin-bottom: 12px;
+    background: rgba(11, 12, 18, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .pv-search {
+    flex: 1; min-width: 260px; max-width: 380px;
+    padding: 8px 12px; font-size: 13px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    outline: none; transition: border-color 150ms, background 150ms;
+  }
+  .pv-search::placeholder { color: var(--text-muted); }
+  .pv-search:focus { border-color: var(--accent); background: var(--bg-card-hover); }
+
+  .pv-chips { display: flex; gap: 6px; align-items: center; }
+  .pv-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 10px; font-size: 12px; font-weight: 500;
+    background: var(--bg-card); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 999px;
+    cursor: pointer; user-select: none;
+    transition: background 150ms, color 150ms, border-color 150ms;
+  }
+  .pv-chip:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+  .pv-chip.is-active { color: var(--text-primary); }
+  .pv-chip[data-verdict="ВЕЗЁМ"].is-active {
+    background: var(--green-bg); color: var(--green-strong); border-color: var(--green-border);
+  }
+  .pv-chip[data-verdict="ИЗУЧИТЬ"].is-active {
+    background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border);
+  }
+  .pv-chip[data-verdict="НЕ ВЕЗЁМ"].is-active {
+    background: var(--red-bg); color: var(--red); border-color: var(--red-border);
+  }
+  .pv-chip[data-verdict="all"].is-active {
+    background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border);
+  }
+  .pv-chip .pv-chip-n {
+    font-variant-numeric: tabular-nums;
+    font-size: 11px; opacity: 0.85;
+  }
+
+  .pv-sort {
+    padding: 7px 10px; font-size: 12px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    cursor: pointer; outline: none;
+  }
+  .pv-sort:focus { border-color: var(--accent); }
+  .pv-toolbar-spacer { flex: 1; }
+  .pv-toolbar-hint { font-size: 11px; color: var(--text-muted); }
+
+  /* --------------------------------- table -------------------------------- */
+  .pv-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .pv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pv-table thead th {
+    text-align: left; padding: 10px 14px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+    text-transform: uppercase; color: var(--text-muted);
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .pv-table thead th.num { text-align: right; }
+  .pv-table tbody tr {
+    height: 40px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    transition: background 150ms, border-color 150ms;
+  }
+  .pv-table tbody tr:last-child { border-bottom: none; }
+  .pv-table tbody tr:hover,
+  .pv-table tbody tr.is-open {
+    background: var(--bg-card-hover);
+    border-left-color: var(--accent);
+  }
+  .pv-table td {
+    padding: 6px 14px; vertical-align: middle;
+    color: var(--text-primary);
+  }
+  .pv-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+  .pv-title-ru {
+    font-weight: 500; color: var(--text-primary);
+    max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pv-title-en {
+    font-size: 11px; color: var(--text-muted);
+    max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; margin-top: 1px;
+  }
+  .pv-cell-title { display: flex; align-items: center; gap: 8px; min-width: 260px; }
+  .pv-cell-title-txt { min-width: 0; flex: 1; }
+
+  /* ------------------------- verdict / cert badges ------------------------ */
+  .pv-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 9px; font-size: 11px; font-weight: 600;
+    border-radius: 999px; letter-spacing: 0.02em; white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .pv-pill--green { background: var(--green-bg); color: var(--green-strong); border-color: var(--green-border); }
+  .pv-pill--amber { background: var(--amber-bg); color: var(--amber);        border-color: var(--amber-border); }
+  .pv-pill--red   { background: var(--red-bg);   color: var(--red);          border-color: var(--red-border); }
+  .pv-pill--muted { background: rgba(154,160,171,0.10); color: var(--text-muted); border-color: var(--border); }
+
+  .pv-cert {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; font-size: 11px; font-weight: 700;
+    border-radius: 4px; flex-shrink: 0;
+  }
+  .pv-cert--high {
+    background: rgba(248,81,73,0.14); color: var(--red);
+    border: 1px solid var(--red-border);
+  }
+  .pv-cert--medium {
+    background: rgba(210,153,34,0.14); color: var(--amber);
+    border: 1px solid var(--amber-border);
+  }
+
+  .pv-supplier-score {
+    display: inline-block; min-width: 34px; text-align: right;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .pv-supplier-max { color: var(--text-muted); font-size: 11px; }
+
+  /* ------------------------------ outcome pill ---------------------------- */
+  .pv-oc { display: inline-flex; align-items: center; gap: 4px;
+           padding: 2px 8px; border-radius: 999px;
+           font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .pv-oc--idle        { background: rgba(107,114,128,0.10); color: #9aa0ab; }
+  .pv-oc--in_progress { background: rgba(165,180,252,0.14); color: #a5b4fc; }
+  .pv-oc--success     { background: rgba(52,211,153,0.15);  color: #34d399; }
+  .pv-oc--failed      { background: rgba(248,113,113,0.14); color: #f87171; }
+  .pv-oc--skipped     { background: rgba(154,160,171,0.12); color: #9aa0ab; }
+
+  /* -------------------------------- empty --------------------------------- */
+  .pv-empty {
+    padding: 40px; text-align: center;
+    color: var(--text-secondary);
+  }
+  .pv-empty .pv-empty-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.7; }
+
+  /* ------------------------------ slide-over ------------------------------ */
+  .pv-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 200ms ease;
+    z-index: 90;
+  }
+  .pv-overlay.is-open { opacity: 1; pointer-events: auto; }
+
+  .pv-drawer {
+    position: fixed; top: 0; right: 0; height: 100vh;
+    width: 480px; max-width: 100vw;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 40px rgba(0,0,0,0.5);
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 100;
+    display: flex; flex-direction: column;
+  }
+  .pv-drawer.is-open { transform: translateX(0); }
+  @media (max-width: 640px) { .pv-drawer { width: 100vw; } }
+
+  .pv-drawer-head {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .pv-drawer-head h2 {
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    margin: 0 0 3px 0; line-height: 1.35;
+  }
+  .pv-drawer-head .pv-drawer-sub {
+    font-size: 12px; color: var(--text-muted); line-height: 1.4;
+  }
+  .pv-drawer-close {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-secondary); cursor: pointer;
+    width: 28px; height: 28px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 18px; line-height: 1; padding: 0;
+    transition: background 150ms, color 150ms, border-color 150ms;
+    flex-shrink: 0;
+  }
+  .pv-drawer-close:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+  }
+  .pv-drawer-body {
+    overflow-y: auto; flex: 1;
+    padding: 18px 20px 40px;
+  }
+
+  /* 6 sections */
+  .pv-section { padding: 14px 0; border-bottom: 1px dashed var(--border); }
+  .pv-section:last-child { border-bottom: none; }
+  .pv-section-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 10px;
+  }
+  .pv-section-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0; box-shadow: 0 0 8px currentColor;
+  }
+  .pv-section-num {
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 14px;
+  }
+  .pv-section-title {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .pv-section-body { padding-left: 22px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+
+  .pv-sec-1 { color: #818cf8; } /* indigo */
+  .pv-sec-2 { color: #22d3ee; } /* cyan   */
+  .pv-sec-3 { color: #34d399; } /* green  */
+  .pv-sec-4 { color: #fb923c; } /* orange */
+  .pv-sec-5 { color: #a78bfa; } /* violet */
+  .pv-sec-6 { color: #f472b6; } /* pink   */
+
+  .pv-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px;
+    margin-top: 6px;
+  }
+  .pv-metric {
+    padding: 10px 12px; background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .pv-metric-lbl {
+    font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 4px;
+  }
+  .pv-metric-val {
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .pv-metric--wide { grid-column: 1 / -1; }
+
+  .pv-big-money {
+    font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .pv-verdict-big {
+    padding: 4px 14px; font-size: 14px; font-weight: 700;
+    border-radius: 999px; letter-spacing: 0.03em;
+    display: inline-block;
+  }
+  .pv-verdict-big.pv-pill--green { border: 1px solid var(--green-border); }
+  .pv-verdict-big.pv-pill--amber { border: 1px solid var(--amber-border); }
+  .pv-verdict-big.pv-pill--red   { border: 1px solid var(--red-border); }
+  .pv-verdict-reason {
+    margin-top: 10px; font-size: 13px; font-style: italic;
+    color: var(--text-secondary); line-height: 1.55;
+  }
+
+  .pv-cert-line {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; margin-top: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .pv-cert-line .pv-cert { width: 22px; height: 22px; font-size: 13px; }
+  .pv-cert-line--high   .pv-cert-lbl { color: var(--red); }
+  .pv-cert-line--medium .pv-cert-lbl { color: var(--amber); }
+  .pv-cert-line--low    .pv-cert-lbl { color: var(--green); }
+  .pv-cert-lbl { font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .pv-cert-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
+
+  /* outcome form */
+  .pv-form { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .pv-form label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .pv-input, .pv-select, .pv-textarea {
+    width: 100%; padding: 7px 10px; font-size: 13px;
+    background: rgba(0,0,0,0.25); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    outline: none; font-family: inherit;
+    transition: border-color 150ms, background 150ms;
+  }
+  .pv-input:focus, .pv-select:focus, .pv-textarea:focus {
+    border-color: var(--accent); background: rgba(0,0,0,0.35);
+  }
+  .pv-textarea { resize: vertical; min-height: 60px; }
+  .pv-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pv-submit {
+    margin-top: 4px; padding: 9px 14px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid var(--accent-border); border-radius: 6px;
+    font-weight: 600; font-size: 13px; cursor: pointer;
+    transition: background 150ms;
+  }
+  .pv-submit:hover { background: var(--accent-glow); }
+  .pv-form-hint { font-size: 11px; color: var(--text-muted); }
+
+  /* hidden detail data — не показываем в потоке страницы */
+  .pv-detail-source { display: none; }
+</style>
+
+<div class="pv-page">
+  <div class="pv-header">
+    <h1>Товары</h1>
+    <div class="pv-sub">
+      <span class="pv-sub-count"><b>{{ total }}</b> проверенных товаров</span>
+      <span><span class="pv-dot pv-dot--green"></span>ВЕЗЁМ&nbsp;<b style="color:var(--green-strong)">{{ verdicts_count['ВЕЗЁМ'] }}</b></span>
+      <span><span class="pv-dot pv-dot--amber"></span>ИЗУЧИТЬ&nbsp;<b style="color:var(--amber)">{{ verdicts_count['ИЗУЧИТЬ'] }}</b></span>
+      <span><span class="pv-dot pv-dot--red"></span>НЕ ВЕЗЁМ&nbsp;<b style="color:var(--red)">{{ verdicts_count['НЕ ВЕЗЁМ'] }}</b></span>
     </div>
+  </div>
+
+  {% if products %}
+  <div class="pv-toolbar" role="toolbar" aria-label="Фильтры товаров">
+    <input class="pv-search" id="pvSearch" type="search"
+           placeholder="Поиск по названию (RU / EN)…" autocomplete="off">
+    <div class="pv-chips" role="group" aria-label="Фильтр по вердикту">
+      <button type="button" class="pv-chip is-active" data-verdict="all">
+        Все <span class="pv-chip-n">{{ total }}</span>
+      </button>
+      <button type="button" class="pv-chip" data-verdict="ВЕЗЁМ">
+        <span class="pv-dot pv-dot--green"></span>Везём
+        <span class="pv-chip-n">{{ verdicts_count['ВЕЗЁМ'] }}</span>
+      </button>
+      <button type="button" class="pv-chip" data-verdict="ИЗУЧИТЬ">
+        <span class="pv-dot pv-dot--amber"></span>Изучить
+        <span class="pv-chip-n">{{ verdicts_count['ИЗУЧИТЬ'] }}</span>
+      </button>
+      <button type="button" class="pv-chip" data-verdict="НЕ ВЕЗЁМ">
+        <span class="pv-dot pv-dot--red"></span>Не везём
+        <span class="pv-chip-n">{{ verdicts_count['НЕ ВЕЗЁМ'] }}</span>
+      </button>
+    </div>
+    <div class="pv-toolbar-spacer"></div>
+    <select class="pv-sort" id="pvSort" title="Сортировка списка">
+      <option value="margin">по марже ↓</option>
+      <option value="profit_moq">по прибыли / MOQ ↓</option>
+      <option value="date">по дате ↓</option>
+    </select>
+  </div>
+
+  <div class="pv-table-wrap">
+    <table class="pv-table" id="pvTable">
+      <thead>
+        <tr>
+          <th>Товар</th>
+          <th>Вердикт</th>
+          <th class="num">Маржа</th>
+          <th class="num">Прибыль / MOQ</th>
+          <th class="num">Спрос&nbsp;РФ</th>
+          <th class="num">Поставщик</th>
+          <th>Статус сделки</th>
+        </tr>
+      </thead>
+      <tbody id="pvTbody">
+        {% for p in products %}
+          {% set oc = p.outcome %}
+          {% set oc_status = (oc.status if oc else 'idle') or 'idle' %}
+          {% set oc_meta = {
+            'idle':        {'label': 'не начинала', 'icon': '💤'},
+            'in_progress': {'label': 'в работе',    'icon': '🚀'},
+            'success':     {'label': 'получилось',  'icon': '✅'},
+            'failed':      {'label': 'не получилось','icon':'❌'},
+            'skipped':     {'label': 'отложено',    'icon': '⏭'}
+          } %}
+          {% set oc_m = oc_meta.get(oc_status, oc_meta['idle']) %}
+          {% set cert = p.certification or {} %}
+          <tr class="pv-row"
+              data-product-id="{{ p.id }}"
+              data-verdict="{{ p.verdict or '' }}"
+              data-title="{{ ((p.niche_name_ru or '') ~ ' ' ~ (p.title_en or ''))|lower }}"
+              data-margin="{{ p.margin_percent or 0 }}"
+              data-profit="{{ p.margin_total_rub or 0 }}"
+              data-date="{{ p.created_at or '' }}">
+            <td>
+              <div class="pv-cell-title">
+                {% if cert.level == 'high' %}
+                  <span class="pv-cert pv-cert--high" title="{{ cert.label }} — {{ cert.description }}">!</span>
+                {% elif cert.level == 'medium' %}
+                  <span class="pv-cert pv-cert--medium" title="{{ cert.label }} — {{ cert.description }}">*</span>
+                {% endif %}
+                <div class="pv-cell-title-txt">
+                  <div class="pv-title-ru" title="{{ p.niche_name_ru or '—' }}">
+                    {{ p.niche_name_ru or '—' }}
+                  </div>
+                  {% if p.title_en %}
+                    <div class="pv-title-en" title="{{ p.title_en }}">{{ p.title_en }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="{{ verdict_class(p.verdict) }}">{{ p.verdict or '—' }}</span>
+            </td>
+            <td class="num" style="color: {{ margin_color(p.margin_percent) }}; font-weight:600;">
+              {{ fmt_pct(p.margin_percent) }}
+            </td>
+            <td class="num">
+              {% if p.margin_total_rub %}
+                {{ fmt_int(p.margin_total_rub) }}&nbsp;₽
+                {% if p.moq %}
+                  <span style="color:var(--text-muted); font-size:11px;">&nbsp;/&nbsp;{{ fmt_int(p.moq) }}</span>
+                {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="num">
+              {% if p.avito_listings_count %}
+                <span title="Число объявлений на Авито">{{ fmt_int(p.avito_listings_count) }}&nbsp;объяв.</span>
+              {% else %}
+                <span style="color: var(--text-muted);">нет данных</span>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if p.supplier_score is not none %}
+                <span class="pv-supplier-score" style="color: {{ supplier_color(p.supplier_score) }};">
+                  {{ p.supplier_score|int }}
+                </span><span class="pv-supplier-max">&nbsp;/100</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              <span class="pv-oc pv-oc--{{ oc_status }}">
+                <span>{{ oc_m.icon }}</span>{{ oc_m.label }}
+              </span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# --- Скрытые панели деталей — по одной на товар. JS клонирует в drawer. --- #}
+  <div class="pv-detail-source" aria-hidden="true">
+    {% for p in products %}
+      {% set oc = p.outcome %}
+      {% set oc_status = (oc.status if oc else 'idle') or 'idle' %}
+      {% set cert = p.certification or {} %}
+      {% set cert_level = cert.level or 'low' %}
+      <div class="pv-detail" data-product-panel="{{ p.id }}"
+           data-product-title="{{ p.niche_name_ru or p.title_en or ('Товар #' ~ p.id) }}"
+           data-product-en="{{ p.title_en or '' }}">
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-1">01</span>
+            <span class="pv-section-dot pv-sec-1"></span>
+            <span class="pv-section-title">Найти</span>
+          </div>
+          <div class="pv-section-body">
+            Категория ниши: <b style="color:var(--text-primary)">{{ p.niche_category or '— (не указана)' }}</b>.
+            Название на английском: <span style="color:var(--text-primary)">{{ p.title_en or '—' }}</span>.
+          </div>
+        </div>
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-2">02</span>
+            <span class="pv-section-dot pv-sec-2"></span>
+            <span class="pv-section-title">Проверить спрос и предложение</span>
+          </div>
+          <div class="pv-section-body">
+            <div class="pv-grid">
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Авито — объявления</div>
+                <div class="pv-metric-val">
+                  {% if p.avito_listings_count %}{{ fmt_int(p.avito_listings_count) }}{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Авито — медианная цена</div>
+                <div class="pv-metric-val">
+                  {% if p.avito_price_median %}{{ fmt_int(p.avito_price_median) }}&nbsp;₽{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Alibaba — поставщики</div>
+                <div class="pv-metric-val">
+                  {% if p.competition_count %}{{ fmt_int(p.competition_count) }}{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Цена Alibaba, $</div>
+                <div class="pv-metric-val">
+                  {% if p.price_usd_min and p.price_usd_max %}
+                    ${{ "%.2f"|format(p.price_usd_min|float) }}–{{ "%.2f"|format(p.price_usd_max|float) }}
+                  {% elif p.price_usd_min %}
+                    от&nbsp;${{ "%.2f"|format(p.price_usd_min|float) }}
+                  {% else %}—{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-3">03</span>
+            <span class="pv-section-dot pv-sec-3"></span>
+            <span class="pv-section-title">Посчитать деньги</span>
+          </div>
+          <div class="pv-section-body">
+            <div class="pv-grid">
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Себестоимость (MOQ)</div>
+                <div class="pv-metric-val">
+                  {% if p.cost_total_rub %}{{ fmt_int(p.cost_total_rub) }}&nbsp;₽{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">MOQ, шт</div>
+                <div class="pv-metric-val">
+                  {% if p.moq %}{{ fmt_int(p.moq) }}{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric pv-metric--wide">
+                <div class="pv-metric-lbl">Маржа&nbsp;·&nbsp;прибыль за MOQ</div>
+                <div class="pv-big-money" style="color: {{ margin_color(p.margin_percent) }};">
+                  {{ fmt_pct(p.margin_percent) }}
+                  <span style="color: var(--text-secondary); font-size: 14px; font-weight: 500;">
+                    &nbsp;·&nbsp;{% if p.margin_total_rub %}{{ fmt_int(p.margin_total_rub) }}&nbsp;₽{% else %}—{% endif %}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-4">04</span>
+            <span class="pv-section-dot pv-sec-4"></span>
+            <span class="pv-section-title">Риски</span>
+          </div>
+          <div class="pv-section-body">
+            <div class="pv-cert-line pv-cert-line--{{ cert_level }}">
+              {% if cert_level == 'high' %}
+                <span class="pv-cert pv-cert--high">!</span>
+              {% elif cert_level == 'medium' %}
+                <span class="pv-cert pv-cert--medium">*</span>
+              {% else %}
+                <span class="pv-cert" style="background:rgba(63,185,80,0.14); color:var(--green); border:1px solid var(--green-border);">✓</span>
+              {% endif %}
+              <div style="flex:1;">
+                <div class="pv-cert-lbl">Сертификация — {{ cert.label or 'не проверялась' }}</div>
+                <div class="pv-cert-desc">{{ cert.description or 'Комментарий по сертификатам отсутствует.' }}</div>
+              </div>
+            </div>
+
+            <div class="pv-grid" style="margin-top:10px;">
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Балл поставщика</div>
+                <div class="pv-metric-val" style="color: {{ supplier_color(p.supplier_score) }};">
+                  {% if p.supplier_score is not none %}{{ p.supplier_score|int }}/100{% else %}—{% endif %}
+                </div>
+              </div>
+              <div class="pv-metric">
+                <div class="pv-metric-lbl">Уровень риска</div>
+                <div class="pv-metric-val" style="text-transform:capitalize;">
+                  {{ p.supplier_risk_level or '—' }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-5">05</span>
+            <span class="pv-section-dot pv-sec-5"></span>
+            <span class="pv-section-title">Вердикт</span>
+          </div>
+          <div class="pv-section-body">
+            <span class="pv-verdict-big {{ verdict_class(p.verdict) }}">
+              {{ p.verdict or '—' }}
+            </span>
+            {% if p.verdict_reason %}
+              <div class="pv-verdict-reason">«{{ p.verdict_reason }}»</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="pv-section">
+          <div class="pv-section-head">
+            <span class="pv-section-num pv-sec-6">06</span>
+            <span class="pv-section-dot pv-sec-6"></span>
+            <span class="pv-section-title">Факт по сделке</span>
+          </div>
+          <div class="pv-section-body">
+            <div class="pv-form-hint">
+              Личная отметка о реальной сделке — данные калибруют скоринг агентов.
+            </div>
+            <form class="pv-form" method="POST"
+                  action="{{ url_for('save_product_outcome_route', product_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+              <label for="pv-status-{{ p.id }}">Статус</label>
+              <select class="pv-select" id="pv-status-{{ p.id }}" name="status">
+                <option value="idle"        {% if oc_status == 'idle' %}selected{% endif %}>💤 не начинала</option>
+                <option value="in_progress" {% if oc_status == 'in_progress' %}selected{% endif %}>🚀 взяла в работу</option>
+                <option value="success"     {% if oc_status == 'success' %}selected{% endif %}>✅ получилось</option>
+                <option value="failed"      {% if oc_status == 'failed' %}selected{% endif %}>❌ не получилось</option>
+                <option value="skipped"     {% if oc_status == 'skipped' %}selected{% endif %}>⏭ отложено</option>
+              </select>
+
+              <label for="pv-notes-{{ p.id }}">Заметки</label>
+              <textarea class="pv-textarea" id="pv-notes-{{ p.id }}" name="notes" rows="3"
+                        maxlength="2000"
+                        placeholder="Что сработало / поставщик / логистика / …">{{ oc.notes if oc else '' }}</textarea>
+
+              <div class="pv-form-row">
+                <div>
+                  <label for="pv-margin-{{ p.id }}">Реальная маржа, %</label>
+                  <input class="pv-input" id="pv-margin-{{ p.id }}" type="number" step="0.1"
+                         name="actual_margin_percent"
+                         value="{{ oc.actual_margin_percent if oc and oc.actual_margin_percent else '' }}"
+                         placeholder="напр. 62.5">
+                </div>
+                <div>
+                  <label for="pv-profit-{{ p.id }}">Прибыль, ₽</label>
+                  <input class="pv-input" id="pv-profit-{{ p.id }}" type="number" step="1000"
+                         name="actual_profit_rub"
+                         value="{{ oc.actual_profit_rub if oc and oc.actual_profit_rub else '' }}"
+                         placeholder="напр. 120000">
+                </div>
+              </div>
+
+              <button class="pv-submit" type="submit">Сохранить статус сделки</button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="pv-table-wrap">
+    <div class="pv-empty">
+      <div class="pv-empty-icon">◌</div>
+      <p><b>Пока нет проверенных товаров.</b></p>
+      <p style="font-size: 12px; margin-top: 6px;">
+        Запусти пайплайн на дашборде — товары появятся здесь автоматически.
+      </p>
+    </div>
+  </div>
+  {% endif %}
 </div>
+
+{# ---- Slide-over shell (пустой, наполняется по клику из скрытых панелей) ---- #}
+<div class="pv-overlay" id="pvOverlay" tabindex="-1" aria-hidden="true"></div>
+<aside class="pv-drawer" id="pvDrawer" role="dialog" aria-modal="true"
+       aria-labelledby="pvDrawerTitle" aria-hidden="true">
+  <div class="pv-drawer-head">
+    <div style="flex:1; min-width:0;">
+      <h2 id="pvDrawerTitle">Товар</h2>
+      <div class="pv-drawer-sub" id="pvDrawerSub"></div>
+    </div>
+    <button type="button" class="pv-drawer-close" id="pvDrawerClose"
+            aria-label="Закрыть панель товара">×</button>
+  </div>
+  <div class="pv-drawer-body" id="pvDrawerBody"></div>
+</aside>
+
+<script>
+(function() {
+  'use strict';
+
+  var tbody      = document.getElementById('pvTbody');
+  var searchEl   = document.getElementById('pvSearch');
+  var chipsWrap  = document.querySelector('.pv-chips');
+  var sortEl     = document.getElementById('pvSort');
+  var overlay    = document.getElementById('pvOverlay');
+  var drawer     = document.getElementById('pvDrawer');
+  var drawerBody = document.getElementById('pvDrawerBody');
+  var drawerHead = document.getElementById('pvDrawerTitle');
+  var drawerSub  = document.getElementById('pvDrawerSub');
+  var drawerX    = document.getElementById('pvDrawerClose');
+
+  if (!tbody) return;
+
+  var state = { q: '', verdict: 'all' };
+
+  function applyFilters() {
+    var rows = tbody.querySelectorAll('.pv-row');
+    rows.forEach(function(row) {
+      var title = row.getAttribute('data-title') || '';
+      var verdict = row.getAttribute('data-verdict') || '';
+      var okQ = !state.q || title.indexOf(state.q) !== -1;
+      var okV = state.verdict === 'all' || verdict === state.verdict;
+      row.style.display = (okQ && okV) ? '' : 'none';
+    });
+  }
+
+  function applySort(mode) {
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('.pv-row'));
+    rows.sort(function(a, b) {
+      if (mode === 'date') {
+        return (b.getAttribute('data-date') || '').localeCompare(a.getAttribute('data-date') || '');
+      }
+      var key = mode === 'profit_moq' ? 'data-profit' : 'data-margin';
+      var av = parseFloat(a.getAttribute(key)) || 0;
+      var bv = parseFloat(b.getAttribute(key)) || 0;
+      return bv - av;
+    });
+    var frag = document.createDocumentFragment();
+    rows.forEach(function(r) { frag.appendChild(r); });
+    tbody.appendChild(frag);
+  }
+
+  // Search
+  if (searchEl) {
+    searchEl.addEventListener('input', function() {
+      state.q = (this.value || '').trim().toLowerCase();
+      applyFilters();
+    });
+  }
+
+  // Verdict chips
+  if (chipsWrap) {
+    chipsWrap.addEventListener('click', function(e) {
+      var btn = e.target.closest('.pv-chip');
+      if (!btn) return;
+      chipsWrap.querySelectorAll('.pv-chip').forEach(function(c) { c.classList.remove('is-active'); });
+      btn.classList.add('is-active');
+      state.verdict = btn.getAttribute('data-verdict') || 'all';
+      applyFilters();
+    });
+  }
+
+  // Sort
+  if (sortEl) {
+    sortEl.addEventListener('change', function() { applySort(this.value); });
+    applySort(sortEl.value); // initial: default by margin
+  }
+
+  // Drawer open/close
+  function openDrawer(productId) {
+    var src = document.querySelector('.pv-detail[data-product-panel="' + productId + '"]');
+    if (!src) return;
+    // move any 'is-open' from other rows
+    tbody.querySelectorAll('.pv-row.is-open').forEach(function(r) { r.classList.remove('is-open'); });
+    var currentRow = tbody.querySelector('.pv-row[data-product-id="' + productId + '"]');
+    if (currentRow) currentRow.classList.add('is-open');
+
+    var title = src.getAttribute('data-product-title') || 'Товар';
+    var en    = src.getAttribute('data-product-en') || '';
+    drawerHead.textContent = title;
+    drawerSub.textContent  = en;
+
+    drawerBody.innerHTML = '';
+    drawerBody.appendChild(src.cloneNode(true));
+    drawerBody.scrollTop = 0;
+
+    drawer.classList.add('is-open');
+    overlay.classList.add('is-open');
+    drawer.setAttribute('aria-hidden', 'false');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDrawer() {
+    drawer.classList.remove('is-open');
+    overlay.classList.remove('is-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    tbody.querySelectorAll('.pv-row.is-open').forEach(function(r) { r.classList.remove('is-open'); });
+    // очищаем содержимое чтобы не осталось лишних форм в DOM
+    setTimeout(function() { drawerBody.innerHTML = ''; }, 220);
+  }
+
+  tbody.addEventListener('click', function(e) {
+    var row = e.target.closest('.pv-row');
+    if (!row) return;
+    // не открываем drawer если клик прошёл по <a>, <button>, <input> — на всякий случай
+    if (e.target.closest('a, button, input, select, textarea')) return;
+    var id = row.getAttribute('data-product-id');
+    if (id) openDrawer(id);
+  });
+
+  overlay.addEventListener('click', closeDrawer);
+  drawerX.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && drawer.classList.contains('is-open')) closeDrawer();
+  });
+})();
+</script>
 {% endblock %}
