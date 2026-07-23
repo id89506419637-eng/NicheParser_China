@@ -61,6 +61,14 @@ app.secret_key = SECRET_KEY
 app.config["WTF_CSRF_TIME_LIMIT"] = 60 * 60 * 24
 csrf = CSRFProtect(app)
 
+# Blueprints для новых страниц (Wave-UX2 этап 2+).
+# Существующий dashboard остаётся на "/", постепенно переезжаем в /products
+# и /pipeline с новой структурой navigation.
+from src.web.blueprints.products import bp as products_bp  # noqa: E402
+from src.web.blueprints.pipeline import bp as pipeline_bp  # noqa: E402
+app.register_blueprint(products_bp)
+app.register_blueprint(pipeline_bp)
+
 # Cookie-флаги: HttpOnly блокирует кражу через document.cookie,
 # SameSite=Lax — защита от CSRF поверх токена, Secure включается
 # только вне debug (в проде по HTTPS).

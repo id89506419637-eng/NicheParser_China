@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — NicheParser{% endblock %}
+
+{% block content %}
+<div style="padding: 24px;">
+    <h1 style="font-size: 22px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
+        Pipeline
+    </h1>
+    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
+        Kanban-доска твоего процесса — от идеи до фактической маржи
+    </p>
+
+    <div style="padding: 32px; text-align: center; background: var(--bg-card);
+                border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-secondary);">
+        <div style="font-size: 32px; margin-bottom: 8px;">📋</div>
+        <p>Страница <code>/pipeline</code> — Kanban с 6 колонками процесса.</p>
+        <p style="font-size: 12px; margin-top: 8px;">
+            Наполнение — этап 5 UX-волны. Backend уже раскидывает товары по колонкам.
+        </p>
+        <div style="margin-top: 16px; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                Идеи: {{ columns.ideas|length }}
+            </span>
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                Анализ: {{ columns.analysis|length }}
+            </span>
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                Вердикт: {{ columns.verdict|length }}
+            </span>
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                Поставщик: {{ columns.supplier|length }}
+            </span>
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                В пути: {{ columns.shipping|length }}
+            </span>
+            <span style="padding: 4px 10px; border-radius: 6px; background: var(--bg-input); font-size: 11px;">
+                Итог: {{ columns.done|length }}
+            </span>
+        </div>
+    </div>
+</div>
+{% endblock %}

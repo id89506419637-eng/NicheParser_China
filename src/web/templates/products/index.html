@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Товары — NicheParser{% endblock %}
+
+{% block content %}
+<div style="padding: 24px;">
+    <h1 style="font-size: 22px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">
+        Товары
+    </h1>
+    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
+        {{ total }} проверенных товаров ·
+        <span style="color: var(--green);">✓ ВЕЗЁМ {{ verdicts_count['ВЕЗЁМ'] }}</span> ·
+        <span style="color: var(--amber);">? ИЗУЧИТЬ {{ verdicts_count['ИЗУЧИТЬ'] }}</span> ·
+        <span style="color: var(--red);">✗ НЕ ВЕЗЁМ {{ verdicts_count['НЕ ВЕЗЁМ'] }}</span>
+    </p>
+
+    <div style="padding: 32px; text-align: center; background: var(--bg-card);
+                border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-secondary);">
+        <div style="font-size: 32px; margin-bottom: 8px;">🚧</div>
+        <p>Страница <code>/products</code> — master-detail (список + slide-over).</p>
+        <p style="font-size: 12px; margin-top: 8px;">
+            Наполнение — этап 4 UX-волны. Пока данные грузятся, шаблон-заглушка.
+        </p>
+        <p style="font-size: 11px; margin-top: 12px; color: var(--text-muted);">
+            Уже загружено: <strong style="color: var(--text-primary);">{{ products|length }}</strong> товаров
+        </p>
+    </div>
+</div>
+{% endblock %}
