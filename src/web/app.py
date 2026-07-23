@@ -188,6 +188,31 @@ def inject_globals():
     }
 
 
+@app.context_processor
+def inject_sidebar_counters():
+    """
+    Счётчики для sidebar (этап 3 UX-волны 2): показываем сколько чего
+    в каждом разделе прямо в навигации. Позволяет пользователю видеть
+    «где что накопилось» без клика — situational awareness.
+
+    Считаем компактно: три числа через один-два запроса к БД.
+    Если БД недоступна — все нули (не роняем страницу).
+    """
+    counters = {"products_total": 0, "products_go": 0, "pipeline_active": 0}
+    try:
+        products = db.get_top_products(limit=500)
+        counters["products_total"] = len(products)
+        counters["products_go"] = sum(1 for p in products if p.get("verdict") == "ВЕЗЁМ")
+        outcomes_map = db.get_product_outcomes_map()
+        counters["pipeline_active"] = sum(
+            1 for o in outcomes_map.values()
+            if (o.get("status") or "").lower() in ("in_progress",)
+        )
+    except Exception as e:
+        logger.warning(f"sidebar counters failed: {e}")
+    return {"sidebar_counters": counters}
+
+
 @app.template_filter("ago")
 def _filter_ago(iso_dt: Optional[str]) -> str:
     """ISO-строка → '5 мин назад' / 'сегодня 14:23' / '12.05.2026'."""

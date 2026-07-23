@@ -27,13 +27,35 @@
                 </a>
             </li>
             <li>
+                <a href="{{ url_for('products.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('products.') %}active{% endif %}">
+                    <span class="nav-icon">📦</span><span>Товары</span>
+                    {% if sidebar_counters.products_go %}
+                    <span class="nav-badge nav-badge--green" title="товаров с вердиктом ВЕЗЁМ">
+                        {{ sidebar_counters.products_go }}
+                    </span>
+                    {% elif sidebar_counters.products_total %}
+                    <span class="nav-badge">{{ sidebar_counters.products_total }}</span>
+                    {% endif %}
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('pipeline.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('pipeline.') %}active{% endif %}">
+                    <span class="nav-icon">📋</span><span>Pipeline</span>
+                    {% if sidebar_counters.pipeline_active %}
+                    <span class="nav-badge nav-badge--blue" title="сделок сейчас в работе">
+                        {{ sidebar_counters.pipeline_active }}
+                    </span>
+                    {% endif %}
+                </a>
+            </li>
+            <li>
                 <a href="{{ url_for('settings_page') }}" class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">
                     <span class="nav-icon">⚙️</span><span>Настройки ВЭД</span>
                 </a>
             </li>
             <li>
                 <a href="{{ url_for('history') }}" class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">
-                    <span class="nav-icon">📋</span><span>История</span>
+                    <span class="nav-icon">🕐</span><span>История</span>
                 </a>
             </li>
         </ul>
