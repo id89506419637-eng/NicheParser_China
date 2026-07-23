@@ -2,54 +2,90 @@
    NicheParser_China — Premium Dark Theme
    ============================================ */
 
-/* === CSS Variables === */
+/* === CSS Variables ===
+   Дизайн-токены обновлены на этап 1 Wave-UX:
+   - Слоистая угольная палитра (8 оттенков вместо 4) — глубина без контраста
+   - Приглушённый холодный акцент #4f7cff — «финансовый инструмент»
+   - Desaturated семантика (GitHub dark green, не Tailwind emerald)
+   - Плотность cozy: строки 36-40px, паддинги 16-20px
+   - Radius 8-10px (не 16, чтобы не был «маркетинговый»)
+   Все существующие правила ниже читают эти переменные — не ломаются.
+*/
 :root {
-    --bg-primary: #0a0b0f;
-    --bg-secondary: #12131a;
-    --bg-card: rgba(18, 19, 26, 0.85);
-    --bg-card-hover: rgba(25, 27, 38, 0.95);
-    --bg-sidebar: #0e0f15;
-    --bg-input: rgba(255, 255, 255, 0.04);
+    /* Слои фона: разница 2-4% яркости, не 10% */
+    --bg-primary: #08090c;          /* глубокий фон */
+    --bg-secondary: #0d0e12;        /* обычный фон */
+    --bg-elevated: #12131a;         /* приподнятые панели */
+    --bg-card: #161822;             /* карточки */
+    --bg-card-hover: #1c1e29;       /* hover карточек */
+    --bg-input: #12131a;            /* инпуты, чипы */
+    --bg-input-hover: #1a1c25;      /* hover инпутов */
+    --bg-sidebar: #0a0b10;          /* сайдбар — чуть темнее основы */
 
-    --text-primary: #e8eaed;
-    --text-secondary: #9aa0ab;
-    --text-muted: #5f6571;
+    /* Текст через прозрачность, 3 уровня иерархии */
+    --text-primary: rgba(255, 255, 255, 0.95);
+    --text-secondary: rgba(255, 255, 255, 0.72);
+    --text-muted: rgba(255, 255, 255, 0.48);
     --text-heading: #ffffff;
 
-    --accent: #6366f1;
-    --accent-hover: #818cf8;
-    --accent-glow: rgba(99, 102, 241, 0.25);
+    /* Акцент — холодный сине-стальной вместо индиго-по-умолчанию */
+    --accent: #4f7cff;
+    --accent-hover: #6b90ff;
+    --accent-soft: rgba(79, 124, 255, 0.12);
+    --accent-glow: rgba(79, 124, 255, 0.22);
+    --accent-border: rgba(79, 124, 255, 0.35);
 
-    --green: #10b981;
-    --green-bg: rgba(16, 185, 129, 0.12);
-    --green-border: rgba(16, 185, 129, 0.25);
+    /* Семантика — desaturated (GitHub-style) */
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.10);
+    --green-border: rgba(63, 185, 80, 0.28);
+    --green-strong: #56d364;
 
-    --red: #ef4444;
-    --red-bg: rgba(239, 68, 68, 0.12);
-    --red-border: rgba(239, 68, 68, 0.25);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.10);
+    --red-border: rgba(248, 81, 73, 0.28);
 
-    --amber: #f59e0b;
-    --amber-bg: rgba(245, 158, 11, 0.12);
-    --amber-border: rgba(245, 158, 11, 0.25);
+    --amber: #d29922;
+    --amber-bg: rgba(210, 153, 34, 0.10);
+    --amber-border: rgba(210, 153, 34, 0.28);
 
-    --blue: #3b82f6;
-    --blue-bg: rgba(59, 130, 246, 0.12);
-    --blue-border: rgba(59, 130, 246, 0.25);
+    --blue: #388bfd;
+    --blue-bg: rgba(56, 139, 253, 0.10);
+    --blue-border: rgba(56, 139, 253, 0.28);
 
+    --purple: #a371f7;
+    --purple-bg: rgba(163, 113, 247, 0.10);
+    --purple-border: rgba(163, 113, 247, 0.28);
+
+    /* Границы — очень тонкие, 6% и 12% opacity */
     --border: rgba(255, 255, 255, 0.06);
     --border-hover: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.18);
 
+    /* Размеры (4px scale, Tailwind-совместимо) */
     --sidebar-width: 240px;
-    --radius: 12px;
-    --radius-sm: 8px;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --radius-lg: 14px;
 
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
-    --shadow-glow: 0 0 30px var(--accent-glow);
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
 
-    --transition: 0.2s ease;
-    --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Тени — сдержанные, не «marketing blur 40px» */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 3px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 24px var(--accent-glow);
+
+    /* Анимации — Linear-style 150ms ease-out */
+    --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: 100ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* === Reset & Base === */
@@ -67,11 +103,21 @@ html {
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    /* tabular-nums: цифры одной ширины — колонки чисел перестают «прыгать»
+       cv11: single-story a (более чистый вид, Linear/Vercel-style)
+       ss01: alternate stylistic set — компактнее */
+    font-feature-settings: 'tnum', 'cv11', 'ss01';
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
     min-height: 100vh;
     display: flex;
+}
+
+/* Утилита: включить tabular-nums точечно (для колонок чисел / метрик) */
+.mono, .tnum, .metric-value {
+    font-feature-settings: 'tnum';
+    font-variant-numeric: tabular-nums;
 }
 
 a {
