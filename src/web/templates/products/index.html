@@ -442,11 +442,11 @@
           {% set oc = p.outcome %}
           {% set oc_status = (oc.status if oc else 'idle') or 'idle' %}
           {% set oc_meta = {
-            'idle':        {'label': 'не начинала', 'icon': '💤'},
-            'in_progress': {'label': 'в работе',    'icon': '🚀'},
-            'success':     {'label': 'получилось',  'icon': '✅'},
-            'failed':      {'label': 'не получилось','icon':'❌'},
-            'skipped':     {'label': 'отложено',    'icon': '⏭'}
+            'idle':        {'label': 'не начинала'},
+            'in_progress': {'label': 'в работе'},
+            'success':     {'label': 'получилось'},
+            'failed':      {'label': 'не получилось'},
+            'skipped':     {'label': 'отложено'}
           } %}
           {% set oc_m = oc_meta.get(oc_status, oc_meta['idle']) %}
           {% set cert = p.certification or {} %}
@@ -504,7 +504,18 @@
             </td>
             <td>
               <span class="pv-oc pv-oc--{{ oc_status }}">
-                <span>{{ oc_m.icon }}</span>{{ oc_m.label }}
+                {% if oc_status == 'idle' %}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                {% elif oc_status == 'in_progress' %}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+                {% elif oc_status == 'success' %}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                {% elif oc_status == 'failed' %}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                {% elif oc_status == 'skipped' %}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+                {% endif %}
+                {{ oc_m.label }}
               </span>
             </td>
           </tr>
@@ -622,7 +633,7 @@
               {% elif cert_level == 'medium' %}
                 <span class="pv-cert pv-cert--medium">*</span>
               {% else %}
-                <span class="pv-cert" style="background:rgba(63,185,80,0.14); color:var(--green); border:1px solid var(--green-border);">✓</span>
+                <span class="pv-cert" style="background:rgba(63,185,80,0.14); color:var(--green); border:1px solid var(--green-border);"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
               {% endif %}
               <div style="flex:1;">
                 <div class="pv-cert-lbl">Сертификация — {{ cert.label or 'не проверялась' }}</div>
