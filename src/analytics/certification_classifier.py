@@ -23,8 +23,27 @@ NicheParser_China — грубая классификация требовани
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional
+
+
+def _matches_keyword(text: str, kw: str) -> bool:
+    """
+    Проверяем ключевое слово в тексте с учётом длины.
+
+    Короткие ключи (≤3 символов, например 'кт' для компьютерной томографии,
+    'узи', 'мрт', 'ивл') требуют ГРАНИЦЫ СЛОВА — иначе 'кт' ложно ловится
+    в «эле-кт-рический», «тра-кт-ор», «конта-кт», «прод-укт» и т.п.
+    Длинные ключи (4+ символа, 'медицин', 'оружи') — обычный substring,
+    там ложные срабатывания редки.
+
+    Границы слов: пробел, дефис, слэш, запятая, точка, начало/конец строки.
+    """
+    if len(kw) <= 3:
+        pattern = r"(?:^|[\s\-/,.])" + re.escape(kw) + r"(?:$|[\s\-/,.])"
+        return re.search(pattern, text) is not None
+    return kw in text
 
 
 # ── Ключевые слова по уровням (по названию товара) ──────────────────────
@@ -123,7 +142,7 @@ def classify_certification(
 
     # 1) Высокий барьер — проверяем первым, самое серьёзное
     for kw in _KEYWORDS_HIGH:
-        if kw in text:
+        if _matches_keyword(text, kw):
             return CertificationHint(
                 level="high",
                 label="Лицензия / спецразрешение",
@@ -137,7 +156,7 @@ def classify_certification(
 
     # 2) Двойное назначение — дополнительный триггер (тоже high)
     for kw in _KEYWORDS_DUAL_USE_HINTS:
-        if kw in text:
+        if _matches_keyword(text, kw):
             return CertificationHint(
                 level="high",
                 label="⚠ Двойное назначение",
@@ -151,7 +170,7 @@ def classify_certification(
 
     # 3) Средний барьер — сертификат ТР ТС/ЕАС
     for kw in _KEYWORDS_MEDIUM:
-        if kw in text:
+        if _matches_keyword(text, kw):
             return CertificationHint(
                 level="medium",
                 label="Сертификат ЕАС / ТР ТС",
