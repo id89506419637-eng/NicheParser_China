@@ -13,61 +13,43 @@
      ПАМЯТКА + ЛУЧШИЕ ВЕРДИКТЫ + ЛЕГЕНДА ЦВЕТОВ (всегда сверху)
      ═════════════════════════════════════════════════════════════════════ -->
 
-<details class="how-to-memo" open style="margin-bottom:16px; padding:14px 18px;
-        background:linear-gradient(135deg, rgba(59,130,246,0.06), rgba(168,85,247,0.06), rgba(34,197,94,0.06));
-        border:1px solid rgba(255,255,255,0.08); border-radius:10px;">
-    <summary style="cursor:pointer; font-weight:700; font-size:15px; color:#e8eaed;
-                    display:flex; align-items:center; gap:10px;">
-        <span style="font-size:20px;">📖</span>
+<details class="how-to-memo" style="margin-bottom:14px; padding:10px 16px;
+        background:rgba(255,255,255,0.02);
+        border:1px solid rgba(255,255,255,0.08); border-radius:8px;">
+    <summary style="cursor:pointer; font-weight:600; font-size:13px; color:#e8eaed;
+                    display:flex; align-items:center; gap:10px; list-style:none;">
+        <span style="font-size:16px;">📖</span>
         Как работать с этим дашбордом
         <span style="font-size:11px; color:#6b7280; font-weight:400; margin-left:auto;">
-            кликни чтобы свернуть
+            кликни чтобы развернуть
         </span>
     </summary>
-    <div style="margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">
-        <div style="padding:12px 14px; background:rgba(59,130,246,0.08);
-                    border-left:3px solid #3b82f6; border-radius:6px;">
-            <div style="font-weight:700; color:#60a5fa; font-size:13px; margin-bottom:6px;">
-                🔵 ФАЗА 1 · С чего начать
-            </div>
-            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
-                Три способа зайти — выбирай один:<br>
-                <strong>🤖 «Подобрать по нише»</strong> — уже знаешь ЧТО возить<br>
-                <strong>🔬 «Разведка индустрии»</strong> — знаешь только сферу<br>
-                <strong>🎯 «Детектор импорта»</strong> — вообще без идей, покажи что растёт
-            </div>
-        </div>
-        <div style="padding:12px 14px; background:rgba(168,85,247,0.08);
-                    border-left:3px solid #a855f7; border-radius:6px;">
-            <div style="font-weight:700; color:#c084fc; font-size:13px; margin-bottom:6px;">
-                🟣 ФАЗА 2 · Кандидаты — выбери что копать
-            </div>
-            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
-                Результаты разведки: <strong>💡 гипотезы</strong> (по индустрии) и
-                <strong>📈 сигналы</strong> (по импорту). Это ещё НЕ финальные вердикты —
-                это идеи с баллами. Жми <strong>«🚀 Взять в работу»</strong> на понравившейся —
-                пойдёт полный анализ.
-            </div>
-        </div>
-        <div style="padding:12px 14px; background:rgba(34,197,94,0.08);
-                    border-left:3px solid #22c55e; border-radius:6px;">
-            <div style="font-weight:700; color:#4ade80; font-size:13px; margin-bottom:6px;">
-                🟢 ФАЗА 3 · Готовые вердикты
-            </div>
-            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
-                Товары после полного анализа: <strong>ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ</strong> +
-                маржа, прибыль, оценка поставщика. Здесь и надо брать в работу.
-                Блок <strong>«📌 Твои лучшие ниши»</strong> ниже — сводка по всем прогонам.
-            </div>
-        </div>
-    </div>
-    <div style="margin-top:12px; padding:10px 14px; background:rgba(251,191,36,0.06);
-                border-left:3px solid #fbbf24; border-radius:6px;
-                font-size:12px; color:#cbd5e1; line-height:1.6;">
-        💡 <strong>Мостики между фазами:</strong> из детектора (0C) можно
-        «взять категорию в работу» — она сгенерит подниши (уходят в фазу 2).
-        Из гипотез (фаза 2) — «взять в работу» → полный пайплайн (фаза 3).
-    </div>
+    {# Компактный список строк вместо кубиков (2026-07-29: по просьбе пользователя). #}
+    <ul style="list-style:none; margin:10px 0 0 0; padding:0; font-size:12.5px; line-height:1.7;">
+        <li style="padding:5px 0; border-bottom:1px dashed rgba(255,255,255,0.05);">
+            <strong style="color:#60a5fa;">🔵 Фаза 1 · С чего начать</strong> —
+            три входа: <strong>«Подобрать по нише»</strong> (знаешь ЧТО),
+            <strong>«Разведка индустрии»</strong> (знаешь сферу),
+            <strong>«Детектор импорта»</strong> (без идей — покажет что растёт)
+        </li>
+        <li style="padding:5px 0; border-bottom:1px dashed rgba(255,255,255,0.05);">
+            <strong style="color:#c084fc;">🟣 Фаза 2 · Кандидаты</strong> —
+            результаты разведки: <strong>гипотезы</strong> + <strong>сигналы</strong>.
+            Ещё НЕ финалы — идеи с баллами. Жми <strong>«🚀 Взять в работу»</strong>
+            → пойдёт полный анализ
+        </li>
+        <li style="padding:5px 0; border-bottom:1px dashed rgba(255,255,255,0.05);">
+            <strong style="color:#4ade80;">🟢 Фаза 3 · Готовые вердикты</strong> —
+            товары после анализа: <strong>ВЕЗЁМ / ИЗУЧИТЬ / НЕ ВЕЗЁМ</strong> + маржа,
+            прибыль, поставщик. Здесь и берёшь в работу.
+            Блок <strong>«📌 Твои лучшие ниши»</strong> ниже — сводка по всем прогонам
+        </li>
+        <li style="padding:5px 0; color:#fbbf24;">
+            <strong>💡 Мостики:</strong> из детектора — «взять категорию в работу»
+            → сгенерит подниши (фаза 2). Из гипотез — «взять в работу» →
+            полный пайплайн (фаза 3)
+        </li>
+    </ul>
 </details>
 
 {# ─── Статус источников данных: mock / реальный / LLM — для честности ─── #}
