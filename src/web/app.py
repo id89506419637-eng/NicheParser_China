@@ -271,20 +271,26 @@ def _load_latest_import_signals() -> Optional[dict]:
     }
 
 
-def _hydrate_industry_run_from_db() -> dict:
+def _hydrate_industry_run_from_db(industry_key: Optional[str] = None) -> dict:
     """
-    Если `_last_industry_run` пуст (после рестарта сервера) — подгружаем
-    последний batch гипотез из БД. Нормализуем под ту же структуру, что
-    создаёт explore_industry_route, чтобы шаблон рендерил одинаково.
+    Подгружает batch гипотез из БД.
+    Если задан industry_key — берёт последний batch по этой индустрии,
+    иначе — последний вообще (для обратной совместимости).
+
     Возвращаем dict с {industry, industry_label, hypotheses, batch_id,
     finished_at} либо пустой dict если в БД ничего нет.
     """
-    batches = db.get_hypothesis_batches(limit=1)
+    batches = db.get_hypothesis_batches(limit=50)
     if not batches:
         return {"industry": "", "industry_label": "", "hypotheses": [],
                 "batch_id": "", "finished_at": ""}
 
-    batch = batches[0]
+    # Фильтр по индустрии если задан
+    if industry_key:
+        matching = [b for b in batches if b.get("industry") == industry_key]
+        batch = matching[0] if matching else batches[0]
+    else:
+        batch = batches[0]
     rows = db.get_hypotheses_by_batch(batch["batch_id"])
     hypotheses = [
         {
@@ -360,12 +366,30 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
     # сделаем когда реально понадобится копаться в архиве).
     runs_history = db.get_runs_grouped(limit_runs=10)
 
-    # Если в памяти процесса пусто (свежий старт сервера) — подгружаем
-    # последний batch гипотез из БД. Иначе после рестарта дашборд бы
-    # показывал «нет гипотез», хотя в БД они есть.
-    industry_run = _last_industry_run
-    if not industry_run.get("hypotheses"):
-        industry_run = _hydrate_industry_run_from_db()
+    # Выбор индустрии для показа: ?industry=металлообработка в URL или
+    # dropdown-переключатель в шаблоне. Если не задан — показываем последний
+    # прогон из памяти процесса или из БД (fallback после рестарта).
+    requested_industry = (request.args.get("industry") or "").strip()
+    if requested_industry:
+        # Явный выбор пользователя через dropdown — тянем из БД
+        industry_run = _hydrate_industry_run_from_db(industry_key=requested_industry)
+    else:
+        # Дефолт: свежий прогон из памяти, иначе последний из БД
+        industry_run = _last_industry_run
+        if not industry_run.get("hypotheses"):
+            industry_run = _hydrate_industry_run_from_db()
+
+    # Список доступных индустрий из БД — для dropdown-переключателя в шаблоне.
+    # Уникальные ключи + человекочитаемые лейблы (из INDUSTRIES или сам key).
+    all_batches = db.get_hypothesis_batches(limit=50)
+    seen_industries = []
+    seen_keys = set()
+    for b in all_batches:
+        k = b.get("industry")
+        if k and k not in seen_keys:
+            seen_keys.add(k)
+            label = INDUSTRIES.get(k, {}).get("label", k)
+            seen_industries.append({"key": k, "label": label, "count": b.get("count", 0)})
 
     ctx = {
         "products": top_products,
@@ -386,6 +410,10 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
             {"key": k, "label": v["label"]} for k, v in INDUSTRIES.items()
         ],
         "industry_run": industry_run,
+        # Wave-UX3 (29.07): dropdown-переключатель индустрий в шаблоне.
+        # Показывает те индустрии по которым в БД есть хоть один batch гипотез.
+        "available_industries": seen_industries,
+        "current_industry_key": industry_run.get("industry", ""),
         # Wave 5E — список вопросов для DR-чеклиста (rendered в шаблоне)
         "dr_questions": db.DR_QUESTIONS,
         # Wave 6 — сигналы Agent 0C (Import Detector). Подгружаем последний

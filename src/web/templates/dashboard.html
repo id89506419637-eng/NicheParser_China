@@ -1062,7 +1062,26 @@
 
 <div class="card" style="border-left:4px solid #a855f7;">
     <div class="card-header">
-        <h2 class="card-title">💡 Гипотезы по индустрии «{{ industry_run.industry_label }}»</h2>
+        <h2 class="card-title" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            💡 Гипотезы по индустрии
+            {# Dropdown-переключатель индустрий (29.07 фикс: раньше показывалась
+               только последняя, мебель/стройка не переключались) #}
+            {% if available_industries and available_industries|length > 1 %}
+            <select onchange="if(this.value){ location.href='?industry='+encodeURIComponent(this.value); }"
+                    style="padding:5px 10px; font-size:13px; font-weight:600;
+                           background:#1a1b25; border:1px solid rgba(255,255,255,0.15);
+                           color:#e8eaed; border-radius:6px; cursor:pointer;">
+                {% for ind in available_industries %}
+                <option value="{{ ind.key }}"
+                        {% if ind.key == current_industry_key %}selected{% endif %}>
+                    {{ ind.label }} ({{ ind.count }})
+                </option>
+                {% endfor %}
+            </select>
+            {% else %}
+                «{{ industry_run.industry_label }}»
+            {% endif %}
+        </h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
             {% set tops = industry_run.hypotheses|selectattr('score_total', 'ge', 70)|list|length %}
             {% set mids = industry_run.hypotheses|selectattr('score_total', 'ge', 50)|rejectattr('score_total', 'ge', 70)|list|length %}
