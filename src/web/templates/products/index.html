@@ -398,7 +398,8 @@
   {% if products %}
   <div class="pv-toolbar" role="toolbar" aria-label="Фильтры товаров">
     <input class="pv-search" id="pvSearch" type="search"
-           placeholder="Поиск по названию (RU / EN)…" autocomplete="off">
+           placeholder="🔎 Фильтр по названию (только среди уже проверенных)…" autocomplete="off"
+           title="Фильтр по УЖЕ прогнанным товарам в этой таблице. Чтобы запустить НОВЫЙ анализ — используй «Новый анализ» в сайдбаре слева.">
     <div class="pv-chips" role="group" aria-label="Фильтр по вердикту">
       <button type="button" class="pv-chip is-active" data-verdict="all">
         Все <span class="pv-chip-n">{{ total }}</span>

@@ -216,6 +216,31 @@ a:hover {
     text-align: center;
 }
 
+/* CTA «Новый анализ» в сайдбаре — видна на всех страницах, всегда понятно
+   где стартовать новый прогон. Добавлена 2026-07-29 после жалобы что
+   пользователь путала фильтр в /products/ с запуском анализа. */
+.sidebar-cta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 4px 16px 12px;
+    padding: 10px 14px;
+    background: var(--accent);
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    transition: background var(--transition), transform var(--transition);
+    box-shadow: 0 2px 8px rgba(79, 124, 255, 0.28);
+}
+.sidebar-cta:hover {
+    background: var(--accent-hover);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
 /* Бейджи-счётчики в сайдбаре (этап 3 UX-волны 2).
    Показывают сколько чего в разделе — situational awareness без клика. */
 .nav-badge {

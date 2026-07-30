@@ -20,6 +20,14 @@
             <span class="logo-badge">CHINA</span>
         </div>
 
+        {# Большая CTA-кнопка «Новый анализ» — ведёт на дашборд к формам запуска.
+           Видна на всех страницах чтобы пользователь всегда знал где стартовать
+           новый прогон (баг 2026-07-29: путала фильтр товаров с запуском анализа) #}
+        <a href="{{ url_for('dashboard') }}#niche-form" class="sidebar-cta">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Новый анализ</span>
+        </a>
+
         <ul class="nav-menu">
             <li>
                 <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
