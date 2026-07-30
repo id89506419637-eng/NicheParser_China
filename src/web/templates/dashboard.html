@@ -1084,24 +1084,60 @@
             ▶ Раскрыть {{ industry_run.hypotheses|length }} гипотез (топ-10 развёрнуто, остальные в accordion)
         </summary>
     <div style="padding:8px 16px 16px;">
-        {# Топ-10 развёрнуто #}
-        {% for h in industry_run.hypotheses[:10] %}
+        {# 3 группы по баллу (2026-07-29 фикс по просьбе):
+             - «в работу» 70+ → развёрнуто (топчики)
+             - «проверить» 50-69 → accordion «раскрыть»
+             - «отброс» <50 → отдельный аккордеон внизу «показать отброшенные» #}
+        {% set tops = industry_run.hypotheses|selectattr('score_total','ge',70)|list %}
+        {% set mids = industry_run.hypotheses|selectattr('score_total','ge',50)|rejectattr('score_total','ge',70)|list %}
+        {% set lows = industry_run.hypotheses|rejectattr('score_total','ge',50)|list %}
+
+        {# 1. ТОП (70+) — развёрнуто, самое важное сверху #}
+        {% if tops %}
+        {% for h in tops %}
             {{ hypothesis_card(h, loop.index) }}
         {% endfor %}
+        {% else %}
+        <div style="padding:20px 16px; text-align:center; color:#9aa0ab; font-size:13px;
+                    background:rgba(255,255,255,0.02); border-radius:6px;">
+            В топе «в работу» (70+) сейчас пусто — смотри «проверить» ниже
+            или запусти другую индустрию через «➕ Новый анализ»
+        </div>
+        {% endif %}
 
-        {# Остальные — в accordion, свёрнуто #}
-        {% if industry_run.hypotheses|length > 10 %}
+        {# 2. СРЕДНИЕ (50-69) — в accordion, свёрнуто #}
+        {% if mids %}
         <details style="margin-top:14px;">
             <summary style="cursor:pointer; padding:10px 14px;
-                            background:rgba(255,255,255,0.03);
-                            border:1px solid rgba(255,255,255,0.06);
-                            border-radius:6px; color:#9aa0ab; font-size:13px;">
-                ▶ Показать остальные {{ industry_run.hypotheses|length - 10 }} гипотез
-                (балл &lt; топ-10)
+                            background:rgba(251,191,36,0.06);
+                            border:1px solid rgba(251,191,36,0.20);
+                            border-left:3px solid #fbbf24;
+                            border-radius:6px; color:#fbbf24; font-size:13px; font-weight:600;">
+                ▶ Показать «проверить» ({{ mids|length }}, балл 50-69)
+                — стоит копнуть если описание нравится
             </summary>
             <div style="margin-top:10px;">
-                {% for h in industry_run.hypotheses[10:] %}
-                    {{ hypothesis_card(h, loop.index + 10) }}
+                {% for h in mids %}
+                    {{ hypothesis_card(h, loop.index + tops|length) }}
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+
+        {# 3. ОТБРОШЕННЫЕ (<50) — отдельный аккордеон внизу, свёрнут #}
+        {% if lows %}
+        <details style="margin-top:10px;">
+            <summary style="cursor:pointer; padding:10px 14px;
+                            background:rgba(107,114,128,0.06);
+                            border:1px solid rgba(107,114,128,0.20);
+                            border-left:3px solid #6b7280;
+                            border-radius:6px; color:#9aa0ab; font-size:13px;">
+                ▶ Показать отброшенные ({{ lows|length }}, балл &lt; 50)
+                — с указанием почему нет
+            </summary>
+            <div style="margin-top:10px;">
+                {% for h in lows %}
+                    {{ hypothesis_card(h, loop.index + tops|length + mids|length) }}
                 {% endfor %}
             </div>
         </details>
