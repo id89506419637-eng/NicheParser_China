@@ -1054,10 +1054,12 @@
             {% set yes = dr.yes_count %}
             {% set source_label = 'ручная оценка' %}
         {% elif dr_ai %}
-            {% set yes = 0 %}
-            {% for qn in ['q1','q2','q3','q4','q5','q6','q7'] %}
-                {% if dr_ai.get(qn ~ '_ai') == 1 %}{% set yes = yes + 1 %}{% endif %}
-            {% endfor %}
+            {# Jinja2-scope баг: {% set yes = yes + 1 %} внутри for не работает.
+               Считаем через сумму значений — надёжнее и короче. #}
+            {% set yes = (dr_ai.get('q1_ai') or 0) + (dr_ai.get('q2_ai') or 0)
+                       + (dr_ai.get('q3_ai') or 0) + (dr_ai.get('q4_ai') or 0)
+                       + (dr_ai.get('q5_ai') or 0) + (dr_ai.get('q6_ai') or 0)
+                       + (dr_ai.get('q7_ai') or 0) %}
             {% set source_label = '🤖 AI-оценка (можно исправить)' %}
         {% else %}
             {% set yes = 0 %}
