@@ -953,17 +953,68 @@
         {% if h.china_solution %}<div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;"><span style="color:#6b7280;">🇨🇳 Китай:</span> {{ h.china_solution }}</div>{% endif %}
         {% if h.why_free %}<div style="font-size:12px; color:#9aa0ab; margin-top:4px; line-height:1.5;"><span style="color:#6b7280;">🇷🇺 Почему свободно:</span> {{ h.why_free }}</div>{% endif %}
 
-        {# Разложение скоринга по 7 факторам #}
+        {# Разложение скоринга по 7 факторам + человекочитаемые ярлыки
+           (2026-07-31 по просьбе — цифра сама по себе непонятна, добавить
+           словесную интерпретацию «5 объявл = свободная ниша» и т.п.) #}
         {% if h.score_breakdown and h.score_breakdown.factors %}
         <div style="margin-top:10px; padding:10px 12px; background:rgba(0,0,0,0.18); border-radius:5px;">
             <div style="font-size:11px; color:#6b7280; margin-bottom:6px;">Скоринг 7 факторов:</div>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 12px;">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:6px 12px;">
                 {% set names = {'economy': '💰 Экономика', 'demand': '🔍 Спрос Яндекс', 'china': '🇨🇳 Китай', 'avito': '🇷🇺 Конк. Авито', 'demo': '📹 Демо', 'ops': '🔧 Опер.', 'critic': '🛑 Критик'} %}
                 {% for key, info in h.score_breakdown.factors.items() %}
+                    {# Словесный ярлык что означает балл — понятнее чем 15/15 #}
+                    {% set ratio = (info.score / info.max) if info.max > 0 else 0 %}
+                    {% if key == 'avito' %}
+                        {% if ratio >= 1 %}{% set label = '✓ свободная ниша' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.7 %}{% set label = 'здоровая конкуренция' %}{% set label_col = '#4ade80' %}
+                        {% elif ratio >= 0.4 %}{% set label = '⚠ тесно' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = '✗ перегрето / нет рынка' %}{% set label_col = '#f87171' %}
+                        {% endif %}
+                    {% elif key == 'economy' %}
+                        {% if ratio >= 0.9 %}{% set label = '✓ отличная маржа' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.6 %}{% set label = 'хорошая маржа' %}{% set label_col = '#4ade80' %}
+                        {% elif ratio >= 0.3 %}{% set label = '⚠ средняя маржа' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = '✗ маржи мало' %}{% set label_col = '#f87171' %}
+                        {% endif %}
+                    {% elif key == 'demand' %}
+                        {% if ratio >= 0.85 %}{% set label = '✓ большой спрос в РФ' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.55 %}{% set label = 'нормальный спрос' %}{% set label_col = '#4ade80' %}
+                        {% elif ratio >= 0.2 %}{% set label = '⚠ спрос слабый' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = '✗ почти не ищут' %}{% set label_col = '#f87171' %}
+                        {% endif %}
+                    {% elif key == 'china' %}
+                        {% if ratio >= 1 %}{% set label = '✓ много поставщиков' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.7 %}{% set label = 'есть выбор поставщиков' %}{% set label_col = '#4ade80' %}
+                        {% elif ratio >= 0.4 %}{% set label = '⚠ мало поставщиков' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = '✗ нет предложений' %}{% set label_col = '#f87171' %}
+                        {% endif %}
+                    {% elif key == 'critic' %}
+                        {% if ratio >= 0.8 %}{% set label = '✓ рисков мало' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.4 %}{% set label = '⚠ есть возражения' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = '✗ много контраргументов' %}{% set label_col = '#f87171' %}
+                        {% endif %}
+                    {% elif key == 'demo' %}
+                        {% if info.score > 0 %}{% set label = '✓ продаётся без физпоказа' %}{% set label_col = '#34d399' %}
+                        {% else %}{% set label = 'не заполнено (жми Deal Readiness)' %}{% set label_col = '#9aa0ab' %}
+                        {% endif %}
+                    {% elif key == 'ops' %}
+                        {% if ratio >= 0.9 %}{% set label = '✓ операционка ок' %}{% set label_col = '#34d399' %}
+                        {% elif ratio >= 0.5 %}{% set label = '⚠ частично готово' %}{% set label_col = '#fbbf24' %}
+                        {% else %}{% set label = 'не заполнено (жми Deal Readiness)' %}{% set label_col = '#9aa0ab' %}
+                        {% endif %}
+                    {% else %}{% set label = '' %}{% set label_col = '#9aa0ab' %}
+                    {% endif %}
                 <div style="font-size:11px; color:#9aa0ab;">
-                    <strong style="color:#e8eaed;">{{ names[key] }}:</strong>
-                    <span style="color:{% if info.score == info.max %}#34d399{% elif info.score >= info.max // 2 %}#fbbf24{% else %}#6b7280{% endif %};">{{ info.score }}/{{ info.max }}</span>
-                    <span style="color:#6b7280;">— {{ info.value }}</span>
+                    <div>
+                        <strong style="color:#e8eaed;">{{ names[key] }}:</strong>
+                        <span style="color:{% if info.score == info.max %}#34d399{% elif info.score >= info.max // 2 %}#fbbf24{% else %}#6b7280{% endif %};">{{ info.score }}/{{ info.max }}</span>
+                        <span style="color:#6b7280;">— {{ info.value }}</span>
+                    </div>
+                    {% if label %}
+                    <div style="color:{{ label_col }}; margin-top:1px; padding-left:2px; font-size:10.5px;">
+                        {{ label }}
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
