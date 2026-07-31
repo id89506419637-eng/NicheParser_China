@@ -630,68 +630,13 @@
 {% endif %}
 
 <!-- ═════════════════════════════════════════════════════════════════════
-     🔵 ФАЗА 1 · ВХОДНЫЕ ФОРМЫ — с чего начать
+     🔵 ШАГ 1 · С ЧЕГО НАЧАТЬ — «где взять идеи»
+     ─────────────────────────────────────────────────────────────────────
+     Порядок 2026-07-31 перевёрнут (по просьбе): раньше сверху была
+     форма «Подобрать по нише» (это САМОЕ УЗКОЕ), потом широкое
+     (Разведка/Детектор). Теперь широкое сверху, узкое (готовая идея)
+     внизу. Форма niche-form + done-banner перенесены ПОСЛЕ детектора.
      ═════════════════════════════════════════════════════════════════════ -->
-
-<!-- Agent 1: niche input → LLM-генерация товаров -->
-<details class="card entry-card" style="border-left:4px solid #3b82f6;">
-    <summary class="entry-summary">
-        <div>
-            <div class="entry-title">🤖 Подобрать товары по нише</div>
-            <div class="entry-sub">LLM сгенерит 5–10 конкретных B2B-товаров · 10–20 сек</div>
-        </div>
-        <span class="entry-chev">▶</span>
-    </summary>
-    <form id="niche-form" action="{{ url_for('run_niche') }}" method="POST"
-          style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="text" name="niche" maxlength="80" required
-               value="{{ generated_niche or '' }}"
-               placeholder="например: станки, медоборудование, солнечные панели"
-               style="flex:1; min-width:280px; padding:10px 14px; font-size:14px;
-                      background:#1a1b25; border:1px solid rgba(255,255,255,0.12);
-                      border-radius:8px; color:#e8eaed;">
-        <button id="niche-submit" type="submit" class="btn btn-primary">
-            <span class="btn-icon">🔍</span> <span class="btn-label">Найти товары</span>
-        </button>
-    </form>
-    <div id="niche-loader" style="display:none; flex-direction:column; gap:12px;
-              padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
-        <div style="display:flex; align-items:center; gap:14px;">
-            <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🤖</span>
-            <div style="flex:1;">
-                <div style="font-weight:600; color:#e8eaed; font-size:14px;">
-                    Анализирую нишу <span id="niche-loader-name"></span>
-                </div>
-                <div id="niche-loader-step" style="color:#a5b4fc; font-size:12px; margin-top:2px;">
-                    Запускаю пайплайн...
-                </div>
-            </div>
-            <div style="text-align:right;">
-                <div id="niche-loader-timer" style="font-variant-numeric:tabular-nums;
-                     font-size:18px; font-weight:600; color:#e8eaed;">0с</div>
-                <div style="color:#6b7280; font-size:11px;">обычно 15–40с</div>
-            </div>
-        </div>
-        <div id="niche-loader-steps" style="display:grid; grid-template-columns:repeat(4, 1fr);
-             gap:6px 14px; font-size:11px; color:#6b7280; line-height:1.5;">
-            <!-- заполняется JS -->
-        </div>
-    </div>
-</details>
-
-<!-- ✅ Done banner — показывается после рефреша если только что был прогон -->
-<div id="niche-done-banner" style="display:none; margin:0 0 16px 0;
-     padding:12px 18px; background:rgba(16,185,129,0.12);
-     border:1px solid rgba(16,185,129,0.35); border-radius:8px;
-     color:#34d399; font-size:14px; font-weight:600;
-     align-items:center; justify-content:space-between; gap:14px;">
-    <span><span style="font-size:18px;">✅</span>
-          Готово! Анализ занял <span id="niche-done-duration">—</span></span>
-    <button type="button" id="niche-done-close" aria-label="Закрыть"
-            style="background:none; border:none; color:#34d399; font-size:18px;
-                   cursor:pointer; padding:0 4px; opacity:0.6;">✕</button>
-</div>
 
 <style>
 @keyframes bounce-emoji {
@@ -759,7 +704,13 @@
 }
 </style>
 
-<!-- 🔬 Agent 0A: Industry Explorer (Wave 5A) -->
+<!-- 🔬 Agent 0A: Industry Explorer (Wave 5A) — СКРЫТ 2026-07-31 -->
+{# По просьбе пользователя: «LLM выдумывает ниши, зачем мне это, голова кипит».
+   Форма разведки индустрии не показывается — оставляем только реальные
+   источники (детектор Comtrade + подобрать по нише). Гипотезы всё равно
+   могут появляться через мост «Взять категорию в работу» из детектора —
+   это подниши реальной HS-4 категории, не выдумки. #}
+{% if false %}
 <details class="card entry-card" style="border-left:4px solid #3b82f6;">
     <summary class="entry-summary">
         <div>
@@ -801,6 +752,7 @@
         <div class="dot-pulse"><span></span><span></span><span></span></div>
     </div>
 </details>
+{% endif %}
 
 <!-- 🎯 Agent 0C: Import Detector (Wave 6) -->
 <details class="card entry-card" style="border-left:4px solid #3b82f6;">
@@ -1465,6 +1417,79 @@
     </details>
 </div>
 {% endif %}
+
+<!-- ═════════════════════════════════════════════════════════════════════
+     💡 ШАГ ОТДЕЛЬНО · «Уже знаешь конкретную идею? Проверь напрямую»
+     Перенесена сюда 2026-07-31: раньше была первой сверху, но
+     логически это САМЫЙ УЗКИЙ вход — уместнее ниже широкой разведки.
+     ═════════════════════════════════════════════════════════════════════ -->
+<div style="margin-top:24px; padding:14px 18px;
+            background:linear-gradient(135deg, rgba(59,130,246,0.05), rgba(34,197,94,0.05));
+            border:1px dashed rgba(59,130,246,0.30); border-radius:10px;">
+    <div style="font-size:13px; color:#9aa0ab; margin-bottom:10px;">
+        💡 <strong style="color:#e8eaed;">Уже знаешь товар?</strong>
+        Не хочешь листать 60 категорий детектора — вводи название напрямую и жми «Найти товары».
+    </div>
+
+    <details class="card entry-card" style="border-left:4px solid #3b82f6;" open>
+        <summary class="entry-summary">
+            <div>
+                <div class="entry-title">🤖 Подобрать товары по нише</div>
+                <div class="entry-sub">LLM сгенерит 5–10 конкретных B2B-товаров · 10–20 сек</div>
+            </div>
+            <span class="entry-chev">▶</span>
+        </summary>
+        <form id="niche-form" action="{{ url_for('run_niche') }}" method="POST"
+              style="display:flex; gap:12px; padding:16px 24px; align-items:center; flex-wrap:wrap;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="text" name="niche" maxlength="80" required
+                   value="{{ generated_niche or '' }}"
+                   placeholder="например: диван минотти реплика, эпоксидный клей, лазерный станок"
+                   style="flex:1; min-width:280px; padding:10px 14px; font-size:14px;
+                          background:#1a1b25; border:1px solid rgba(255,255,255,0.12);
+                          border-radius:8px; color:#e8eaed;">
+            <button id="niche-submit" type="submit" class="btn btn-primary">
+                <span class="btn-icon">🔍</span> <span class="btn-label">Найти товары</span>
+            </button>
+        </form>
+        <div id="niche-loader" style="display:none; flex-direction:column; gap:12px;
+                  padding:14px 24px 18px; border-top:1px solid rgba(255,255,255,0.06);">
+            <div style="display:flex; align-items:center; gap:14px;">
+                <span class="bounce-emoji" style="font-size:28px; display:inline-block;">🤖</span>
+                <div style="flex:1;">
+                    <div style="font-weight:600; color:#e8eaed; font-size:14px;">
+                        Анализирую нишу <span id="niche-loader-name"></span>
+                    </div>
+                    <div id="niche-loader-step" style="color:#a5b4fc; font-size:12px; margin-top:2px;">
+                        Запускаю пайплайн...
+                    </div>
+                </div>
+                <div style="text-align:right;">
+                    <div id="niche-loader-timer" style="font-variant-numeric:tabular-nums;
+                         font-size:18px; font-weight:600; color:#e8eaed;">0с</div>
+                    <div style="color:#6b7280; font-size:11px;">обычно 15–40с</div>
+                </div>
+            </div>
+            <div id="niche-loader-steps" style="display:grid; grid-template-columns:repeat(4, 1fr);
+                 gap:6px 14px; font-size:11px; color:#6b7280; line-height:1.5;">
+                <!-- заполняется JS -->
+            </div>
+        </div>
+    </details>
+
+    <!-- ✅ Done banner — показывается после рефреша если только что был прогон -->
+    <div id="niche-done-banner" style="display:none; margin:10px 0 0 0;
+         padding:12px 18px; background:rgba(16,185,129,0.12);
+         border:1px solid rgba(16,185,129,0.35); border-radius:8px;
+         color:#34d399; font-size:14px; font-weight:600;
+         align-items:center; justify-content:space-between; gap:14px;">
+        <span><span style="font-size:18px;">✅</span>
+              Готово! Анализ занял <span id="niche-done-duration">—</span></span>
+        <button type="button" id="niche-done-close" aria-label="Закрыть"
+                style="background:none; border:none; color:#34d399; font-size:18px;
+                       cursor:pointer; padding:0 4px; opacity:0.6;">✕</button>
+    </div>
+</div>
 
 <script>
 (function() {
