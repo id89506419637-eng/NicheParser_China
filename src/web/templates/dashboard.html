@@ -1149,7 +1149,7 @@
     </div>
 {% endmacro %}
 
-<div class="card" style="border-left:4px solid #a855f7;">
+<div id="fresh-hypotheses-anchor" class="card" style="border-left:4px solid #a855f7; scroll-margin-top:20px;">
     <div class="card-header">
         <h2 class="card-title" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             💡 Гипотезы по индустрии
@@ -1414,7 +1414,7 @@
 {% endmacro %}
 
 {% if import_signals %}
-<div class="card" style="border-left:4px solid #a855f7;">
+<div id="fresh-signals-anchor" class="card" style="border-left:4px solid #a855f7; scroll-margin-top:20px;">
     <div class="card-header">
         <h2 class="card-title">📈 Сигналы детектора ({{ import_signals.period_prev }} → {{ import_signals.period_current }})</h2>
         <span class="text-muted" style="font-size:12px; text-align:right;">
@@ -1650,6 +1650,8 @@
                 if (label) label.textContent = 'Исследую...';
             }
             if (loader) loader.style.display = 'flex';
+            // Маркер: после reload прыгаем к блоку гипотез с подсветкой
+            try { sessionStorage.setItem('industry-run-started', Date.now().toString()); } catch(e){}
         });
     }
 
@@ -1665,8 +1667,45 @@
                 if (label) label.textContent = 'Тяну Comtrade...';
             }
             if (loader) loader.style.display = 'flex';
+            // Маркер: после reload прыгаем к блоку сигналов
+            try { sessionStorage.setItem('detector-run-started', Date.now().toString()); } catch(e){}
         });
     }
+
+    // === Автоскролл + подсветка после Разведки индустрии ===
+    (function() {
+        var startStr = sessionStorage.getItem('industry-run-started');
+        if (!startStr) return;
+        var elapsed = (Date.now() - parseInt(startStr, 10)) / 1000;
+        sessionStorage.removeItem('industry-run-started');
+        if (elapsed > 600) return; // старше 10 мин — не «только что»
+        var anchor = document.getElementById('fresh-hypotheses-anchor');
+        if (!anchor) return;
+        setTimeout(function() {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            anchor.classList.add('fresh-pulse');
+            // Автораскрытие вложенных details (accordion скрывает гипотезы по умолчанию)
+            anchor.querySelectorAll('details').forEach(function(d) { d.open = true; });
+            setTimeout(function() { anchor.classList.remove('fresh-pulse'); }, 3200);
+        }, 500);
+    })();
+
+    // === Автоскролл + подсветка после Детектора импорта ===
+    (function() {
+        var startStr = sessionStorage.getItem('detector-run-started');
+        if (!startStr) return;
+        var elapsed = (Date.now() - parseInt(startStr, 10)) / 1000;
+        sessionStorage.removeItem('detector-run-started');
+        if (elapsed > 600) return;
+        var anchor = document.getElementById('fresh-signals-anchor');
+        if (!anchor) return;
+        setTimeout(function() {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            anchor.classList.add('fresh-pulse');
+            anchor.querySelectorAll('details').forEach(function(d) { d.open = true; });
+            setTimeout(function() { anchor.classList.remove('fresh-pulse'); }, 3200);
+        }, 500);
+    })();
 
     // === Лоадер для Agent 0D (Tender Reader, Wave 6) ===
     var tenderForm = document.getElementById('tender-form');
