@@ -64,7 +64,7 @@ OPENROUTER_FALLBACK_MODELS = [
     # anthropic/claude-3-5-haiku возвращали 404 «No endpoints found».
     "openai/gpt-4o-mini",                             # $0.15/M in, эталон стабильности
     "google/gemini-2.5-flash",                        # актуальный slug 2026
-    "anthropic/claude-3.5-haiku",                     # актуальный slug 2026
+    "anthropic/claude-haiku-4.5",                     # проверено 2026-07-31 живым запросом
 ]
 
 # === Yandex Wordstat ===
