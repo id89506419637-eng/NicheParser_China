@@ -207,8 +207,11 @@ def _try_one_model(model: str, hypotheses: List[Hypothesis]) -> Tuple[Optional[L
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _build_prompt(hypotheses)},
         ],
-        "temperature": 0.5,
-        "max_tokens": 4000,
+        "temperature": 0.4,
+        # 2026-07-31: увеличили до 8000 — новый промпт с 7 вопросами
+        # Deal Readiness + why-обоснованиями раздувает ответ. При 4000
+        # LLM обрезал ответ на середине → битый JSON → все модели упали.
+        "max_tokens": 8000,
     }
     try:
         resp = requests.post(

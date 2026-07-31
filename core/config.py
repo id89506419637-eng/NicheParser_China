@@ -60,9 +60,11 @@ OPENROUTER_FALLBACK_MODELS = [
     "nvidia/nemotron-3-super-120b-a12b:free",         # ещё backup
 
     # ── Платные (тратим ~$0.0005-0.002 на запрос — надёжно с JSON) ──
-    "google/gemini-2.0-flash-001",                    # $0.10/M in, быстрая, JSON-стабильна
+    # Slug'и обновлены 2026-07-31: старые google/gemini-2.0-flash-001 и
+    # anthropic/claude-3-5-haiku возвращали 404 «No endpoints found».
     "openai/gpt-4o-mini",                             # $0.15/M in, эталон стабильности
-    "anthropic/claude-3-5-haiku",                     # $0.80/M in, самая цепкая на инструкции
+    "google/gemini-2.5-flash",                        # актуальный slug 2026
+    "anthropic/claude-3.5-haiku",                     # актуальный slug 2026
 ]
 
 # === Yandex Wordstat ===
