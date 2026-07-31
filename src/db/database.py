@@ -316,6 +316,7 @@ def init_db() -> None:
         _ensure_column(conn, "hypotheses", "regulatory_risk", "TEXT DEFAULT ''")
         _ensure_column(conn, "hypotheses", "score_total",     "INTEGER DEFAULT -1")
         _ensure_column(conn, "hypotheses", "score_breakdown", "TEXT DEFAULT '{}'")
+        _ensure_column(conn, "hypotheses", "deal_readiness_ai", "TEXT DEFAULT ''")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_hypotheses_score ON hypotheses(score_total DESC)")
         # Wave 6 расширение: 4-летний тренд импорта для стабильности сигнала
         _ensure_column(conn, "import_signals", "history_usd",           "TEXT DEFAULT '[]'")
@@ -800,13 +801,14 @@ def save_hypotheses(hypotheses: List[Hypothesis]) -> List[int]:
                 INSERT INTO hypotheses (batch_id, industry, niche_name, pain,
                     china_solution, why_free, llm_confidence,
                     critic_score, critic_reasons, regulatory_risk,
-                    score_total, score_breakdown, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    score_total, score_breakdown, deal_readiness_ai, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 h.batch_id, h.industry, h.niche_name, h.pain,
                 h.china_solution, h.why_free, h.llm_confidence,
                 int(h.critic_score), h.critic_reasons or "[]", h.regulatory_risk or "",
-                int(h.score_total), h.score_breakdown or "{}", now,
+                int(h.score_total), h.score_breakdown or "{}",
+                getattr(h, "deal_readiness_ai", "") or "", now,
             ))
             ids.append(cur.lastrowid)
         return ids

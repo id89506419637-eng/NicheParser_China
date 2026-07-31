@@ -213,6 +213,22 @@ def inject_sidebar_counters():
     return {"sidebar_counters": counters}
 
 
+@app.template_filter("fromjson")
+def _filter_fromjson(raw: Optional[str]):
+    """
+    Парсит JSON-строку в шаблоне. Используется для полей вроде
+    hypothesis.deal_readiness_ai — там хранится JSON.
+    При ошибке парсинга возвращает пустой dict — шаблон не падает.
+    """
+    if not raw:
+        return {}
+    try:
+        import json as _json
+        return _json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+
+
 @app.template_filter("ago")
 def _filter_ago(iso_dt: Optional[str]) -> str:
     """ISO-строка → '5 мин назад' / 'сегодня 14:23' / '12.05.2026'."""
@@ -306,6 +322,7 @@ def _hydrate_industry_run_from_db(industry_key: Optional[str] = None) -> dict:
             "score_total": r["score_total"],
             "score_breakdown": r["score_breakdown_dict"],
             "deal_readiness": r["deal_readiness"],
+            "deal_readiness_ai": r.get("deal_readiness_ai") or "",
         }
         for r in rows
     ]
@@ -809,7 +826,8 @@ def explore_industry_route():
             "regulatory_risk": h.regulatory_risk or "",
             "score_total": h.score_total,
             "score_breakdown": json.loads(h.score_breakdown or "{}"),
-            "deal_readiness": None,  # ещё не заполнен пользователем
+            "deal_readiness": None,
+            "deal_readiness_ai": getattr(h, "deal_readiness_ai", "") or "",  # ещё не заполнен пользователем
         }
         for i, h in enumerate(hypotheses)
     ]
@@ -991,6 +1009,7 @@ def take_category_route(hs_code: str):
             "score_total": h.score_total,
             "score_breakdown": json.loads(h.score_breakdown or "{}"),
             "deal_readiness": None,
+            "deal_readiness_ai": getattr(h, "deal_readiness_ai", "") or "",
         }
         for i, h in enumerate(hypotheses)
     ]

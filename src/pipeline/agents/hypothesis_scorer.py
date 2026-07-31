@@ -156,11 +156,15 @@ def _score_one(h: Hypothesis, v: dict) -> dict:
     elif av_count <= 200: score_avito = 4
     else: score_avito = 1
 
-    # === 5. Демо-продаваемость (0-12) — из Deal Readiness Q1, по умолчанию 0 ===
-    score_demo, demo_label = _score_demo_from_dr(None)
+    # === 5. Демо-продаваемость (0-12) ===
+    # 2026-07-31: если ручной DR ещё не заполнен — используем AI-оценку
+    # (LLM критик отвечает на 7 вопросов за пользователя). Пользователь
+    # физически не может ответить про 40 незнакомых ниш.
+    dr_ai = _extract_dr_ai(h)
+    score_demo, demo_label = _score_demo_from_dr(dr_ai, is_ai=bool(dr_ai))
 
-    # === 6. Операц. сложность (0-10) — из Deal Readiness Q2,4,5, по умолчанию 0 ===
-    score_ops, ops_label = _score_ops_from_dr(None)
+    # === 6. Операц. сложность (0-10) ===
+    score_ops, ops_label = _score_ops_from_dr(dr_ai, is_ai=bool(dr_ai))
 
     # === 7. LLM Critic Score (0-5) ===
     score_critic = max(0, h.critic_score) if h.critic_score >= 0 else 0
@@ -187,7 +191,32 @@ def _score_one(h: Hypothesis, v: dict) -> dict:
 # остальные факторы (экономика/спрос/китай/авито/критик) не трогаем — они
 # приходят от парсеров и LLM, перепрогон стоит дорого.
 
-def _score_demo_from_dr(dr: dict | None) -> tuple[int, str]:
+def _extract_dr_ai(h: Hypothesis) -> dict | None:
+    """
+    Достаём AI-оценку Deal Readiness из h.deal_readiness_ai (JSON строка).
+    Ключи в AI-версии называются q1_ai, q2_ai, ... (см. hypothesis_critic._apply_critiques).
+    Нормализуем под формат которого ждёт _score_demo_from_dr / _score_ops_from_dr
+    (там ключи q1_demo, q2_warranty, q4_term, q5_legal).
+    """
+    raw = getattr(h, "deal_readiness_ai", "") or ""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    # Мапим q1_ai → q1_demo, q2_ai → q2_warranty, q4_ai → q4_term, q5_ai → q5_legal
+    return {
+        "q1_demo":     int(parsed.get("q1_ai", 0) or 0),
+        "q2_warranty": int(parsed.get("q2_ai", 0) or 0),
+        "q4_term":     int(parsed.get("q4_ai", 0) or 0),
+        "q5_legal":    int(parsed.get("q5_ai", 0) or 0),
+    }
+
+
+def _score_demo_from_dr(dr: dict | None, is_ai: bool = False) -> tuple[int, str]:
     """
     Демо-продаваемость (0-12).
     Q1 = «можно объяснить ценность за 30 секунд без физического показа».
@@ -195,12 +224,13 @@ def _score_demo_from_dr(dr: dict | None) -> tuple[int, str]:
     """
     if not dr:
         return 0, "не заполнено (Deal Readiness)"
+    prefix = "🤖 AI: " if is_ai else ""
     if int(dr.get("q1_demo", 0)) == 1:
-        return 12, "✓ продаётся без офлайн-демо"
-    return 0, "✗ нужен офлайн-показ — не продать по объявлению"
+        return 12, f"{prefix}✓ продаётся без офлайн-демо"
+    return 0, f"{prefix}✗ нужен офлайн-показ — не продать по объявлению"
 
 
-def _score_ops_from_dr(dr: dict | None) -> tuple[int, str]:
+def _score_ops_from_dr(dr: dict | None, is_ai: bool = False) -> tuple[int, str]:
     """
     Операц. сложность (0-10).
     Q2 (гарантия) + Q4 (срок поставки) + Q5 (юр.чистота). Все три — фундамент
@@ -208,11 +238,12 @@ def _score_ops_from_dr(dr: dict | None) -> tuple[int, str]:
     """
     if not dr:
         return 0, "не заполнено (Deal Readiness)"
+    prefix = "🤖 AI: " if is_ai else ""
     yes = int(dr.get("q2_warranty", 0)) + int(dr.get("q4_term", 0)) + int(dr.get("q5_legal", 0))
-    if yes == 3: return 10, "✓ все 3 операц. условия (гарантия/срок/юр.чистота)"
-    if yes == 2: return 6,  f"~ {yes}/3 операц. условий"
-    if yes == 1: return 3,  f"⚠ только {yes}/3 операц. условий"
-    return 0, "✗ ни одно операц. условие не выполнено"
+    if yes == 3: return 10, f"{prefix}✓ все 3 операц. условия (гарантия/срок/юр.чистота)"
+    if yes == 2: return 6,  f"{prefix}~ {yes}/3 операц. условий"
+    if yes == 1: return 3,  f"{prefix}⚠ только {yes}/3 операц. условий"
+    return 0, f"{prefix}✗ ни одно операц. условие не выполнено"
 
 
 def recompute_with_dr(breakdown: dict, h_critic_score: int, dr: dict | None) -> dict:

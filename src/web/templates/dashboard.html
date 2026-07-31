@@ -1033,38 +1033,76 @@
         </div>
         {% endif %}
 
-        {# Deal Readiness Check (Wave 5E) — 7 вопросов, ручной фильтр перед
-           тем как ниша уйдёт в полный анализ. Заполненные ответы влияют на
-           factors.demo и factors.ops в скоринге. #}
+        {# Deal Readiness — 7 вопросов о готовности сделки.
+           Логика приоритетов:
+             1. Если пользователь уже отвечал вручную → показываем его ответы
+             2. Иначе если есть AI-оценка (h.deal_readiness_ai) → предзаполняем ей
+             3. Иначе — пустой чек-лист
+
+           AI-оценка = LLM-критик отвечает за пользователя когда генерит гипотезу.
+           Юзер видит уже отмеченные галочки с пометкой «🤖 AI» и обоснованиями,
+           может согласиться (сохранить) или переопределить где точно знает. #}
         {% if h.id and dr_questions %}
         {% set dr = h.deal_readiness %}
-        {% set yes = dr.yes_count if dr else 0 %}
-        {% if dr %}
-            {% if yes >= 5 %}{% set dr_color = '#34d399' %}{% set dr_bg = 'rgba(52,211,153,0.08)' %}
-            {% elif yes >= 1 %}{% set dr_color = '#fbbf24' %}{% set dr_bg = 'rgba(251,191,36,0.08)' %}
-            {% else %}{% set dr_color = '#f87171' %}{% set dr_bg = 'rgba(248,113,113,0.08)' %}{% endif %}
-        {% else %}
-            {% set dr_color = '#6b7280' %}{% set dr_bg = 'rgba(107,114,128,0.06)' %}
+        {# Парсим AI-оценку если ручной DR пусто #}
+        {% set dr_ai = None %}
+        {% if not dr and h.deal_readiness_ai %}
+            {% set dr_ai = h.deal_readiness_ai|fromjson %}
         {% endif %}
+        {# Считаем "да" из ручного или AI #}
+        {% if dr %}
+            {% set yes = dr.yes_count %}
+            {% set source_label = 'ручная оценка' %}
+        {% elif dr_ai %}
+            {% set yes = 0 %}
+            {% for qn in ['q1','q2','q3','q4','q5','q6','q7'] %}
+                {% if dr_ai.get(qn ~ '_ai') == 1 %}{% set yes = yes + 1 %}{% endif %}
+            {% endfor %}
+            {% set source_label = '🤖 AI-оценка (можно исправить)' %}
+        {% else %}
+            {% set yes = 0 %}
+            {% set source_label = 'не заполнено' %}
+        {% endif %}
+        {% if yes >= 5 %}{% set dr_color = '#34d399' %}{% set dr_bg = 'rgba(52,211,153,0.08)' %}
+        {% elif yes >= 1 %}{% set dr_color = '#fbbf24' %}{% set dr_bg = 'rgba(251,191,36,0.08)' %}
+        {% else %}{% set dr_color = '#6b7280' %}{% set dr_bg = 'rgba(107,114,128,0.06)' %}{% endif %}
         <details style="margin-top:10px;">
             <summary style="cursor:pointer; padding:6px 12px; background:{{ dr_bg }};
                             border-left:2px solid {{ dr_color }}; border-radius:3px;
                             color:{{ dr_color }}; font-size:11px; font-weight:600;">
-                📋 Deal Readiness: {% if dr %}{{ yes }}/7 ответов «да»{% else %}не заполнено — кликни, чтобы проверить готовность сделки{% endif %}
-                {% if dr and yes < 5 %}<span style="color:#f87171; margin-left:6px;">⚠ ниже порога 5/7</span>{% endif %}
+                📋 Deal Readiness: {{ yes }}/7 «да» · {{ source_label }}
+                {% if yes < 5 %}<span style="color:#f87171; margin-left:6px;">⚠ ниже порога 5/7</span>{% endif %}
             </summary>
             <form method="POST" action="{{ url_for('save_deal_readiness_route', hyp_id=h.id) }}"
                   style="margin-top:8px; padding:10px 12px; background:rgba(0,0,0,0.18); border-radius:5px;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div style="font-size:11px; color:#6b7280; margin-bottom:8px;">
-                    Отметь только то, что точно «да». Q1 → 12 баллов «Демо», Q2+Q4+Q5 → до 10 баллов «Опер.»
+                    {% if dr_ai and not dr %}
+                        🤖 <strong style="color:#a5b4fc;">AI сам заполнил</strong> исходя из типа товара.
+                        Можно нажать «Сохранить» (принять как есть) или изменить галочки где ты точно знаешь.
+                    {% else %}
+                        Отметь только то, что точно «да». Q1 → 12 баллов «Демо», Q2+Q4+Q5 → до 10 баллов «Опер.»
+                    {% endif %}
                 </div>
                 {% for key, label in dr_questions %}
+                {# key: q1_demo, q2_warranty, ... — мапим на AI-ключи q1_ai, q2_ai #}
+                {% set ai_key = 'q' ~ (loop.index) ~ '_ai' %}
+                {% set is_checked_manual = dr and dr.get(key) %}
+                {% set is_checked_ai = dr_ai and dr_ai.get(ai_key) == 1 %}
+                {% set is_checked = is_checked_manual or (not dr and is_checked_ai) %}
+                {% set ai_why = dr_ai.get('why', {}).get('q' ~ loop.index) if dr_ai else None %}
                 <label style="display:flex; gap:8px; padding:5px 0; align-items:flex-start; cursor:pointer; font-size:12px; color:#cbd5e1;">
                     <input type="checkbox" name="{{ key }}" value="1"
-                           {% if dr and dr.get(key) %}checked{% endif %}
+                           {% if is_checked %}checked{% endif %}
                            style="margin-top:2px; accent-color:#34d399;">
-                    <span><strong style="color:#9aa0ab;">Q{{ loop.index }}.</strong> {{ label }}</span>
+                    <span>
+                        <strong style="color:#9aa0ab;">Q{{ loop.index }}.</strong> {{ label }}
+                        {% if ai_why and not dr %}
+                        <div style="font-size:10.5px; color:#818cf8; margin-top:2px; font-style:italic; padding-left:2px;">
+                            🤖 {{ ai_why }}
+                        </div>
+                        {% endif %}
+                    </span>
                 </label>
                 {% endfor %}
                 <textarea name="dr_notes" rows="2" maxlength="1000"

@@ -143,6 +143,11 @@ class Hypothesis:
     # Wave 5C — 7-факторный скоринг
     score_total: int = -1            # 0-100, итоговый балл; -1 = не считано
     score_breakdown: str = ""        # JSON: {demand, china, avito, economy, demo, ops, critic, validation_data}
+    # Wave-UX 2026-07-31: LLM сам заполняет Deal Readiness (7 вопросов) во время
+    # критики. Пользователь не может ответить на вопросы про незнакомую нишу —
+    # AI-оценка используется как дефолт если ручной DR ещё не заполнен.
+    # JSON вида: {"q1_demo":1, "q2_warranty":0, ..., "reasons":{"q1":"...", ...}}
+    deal_readiness_ai: str = ""
     created_at: str = ""
 
 
