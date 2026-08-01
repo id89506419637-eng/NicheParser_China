@@ -38,7 +38,7 @@ from src.pipeline.agents.supplier_audit import audit_suppliers
 from src.pipeline.agents.industry_explorer import explore_industry, explore_hs_category, INDUSTRIES
 from src.pipeline.agents.hypothesis_critic import critique_hypotheses
 from src.pipeline.agents.hypothesis_scorer import validate_and_score, recompute_with_dr
-from src.pipeline.agents.import_detector import detect_import_signals
+from src.pipeline.agents.import_detector import detect_import_signals, CATEGORIES as HS_CATEGORIES
 from src.pipeline.agents.tender_reader import read_tenders
 from src.calculator.ved_calculator import VedCalculator, fetch_cbr_rates
 from core.models import VedSettings, Niche, Product, DemandSnapshot
@@ -405,7 +405,14 @@ def _dashboard_context(extra: Optional[dict] = None) -> dict:
         k = b.get("industry")
         if k and k not in seen_keys:
             seen_keys.add(k)
-            label = INDUSTRIES.get(k, {}).get("label", k)
+            # Ключи hs-XXXX — от кнопки «Взять категорию в работу» на детекторе.
+            # Показываем не «hs-8459», а «Сверлильные/фрезерные» — берём из
+            # словаря CATEGORIES того же import_detector.py.
+            if k.startswith("hs-"):
+                hs_code = k[3:]
+                label = HS_CATEGORIES.get(hs_code, f"Категория {hs_code}")
+            else:
+                label = INDUSTRIES.get(k, {}).get("label", k)
             seen_industries.append({"key": k, "label": label, "count": b.get("count", 0)})
 
     ctx = {
